@@ -68,26 +68,11 @@
           <input name="password" type="password" placeholder="••••••••"
                  class="block w-full rounded-xl border-gray-200 bg-gray-50/50 px-4 py-2.5 text-sm transition-all focus:border-primary-500 focus:bg-white focus:ring-4 focus:ring-primary-500/10 outline-none placeholder:text-gray-400">
         </div>
-        <button data-loading-text="登录中..." class="w-full rounded-xl bg-slate-900 text-white shadow-lg shadow-slate-900/20 py-3 text-sm font-semibold hover:bg-slate-800 hover:scale-[1.02] active:scale-[0.98] transition-all">
+        <button class="w-full rounded-xl bg-slate-900 text-white shadow-lg shadow-slate-900/20 py-3 text-sm font-semibold hover:bg-slate-800 hover:scale-[1.02] active:scale-[0.98] transition-all">
           登录
         </button>
       </form>
     </div>
   </div>
-  <script>
-    (function(){
-      document.addEventListener('submit', (event) => {
-        const submitter = event.submitter;
-        if(!submitter) return;
-        const loadingText = submitter.getAttribute('data-loading-text');
-        if(loadingText){
-          submitter.dataset.originalText = submitter.innerHTML;
-          submitter.innerHTML = loadingText;
-        }
-        submitter.disabled = true;
-        submitter.classList.add('opacity-70','cursor-wait');
-      });
-    })();
-  </script>
 </body>
 {{end}}

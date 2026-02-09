@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -21,16 +22,22 @@ type User struct {
 	ID           int64
 	Username     string
 	PasswordHash string
+	IsAdmin      bool
 }
 
 type Key struct {
-	ID        int64
-	UserID    int64
-	Name      string
-	AccessKey string
-	SecretKey string
-	Proxy     string
-	CreatedAt time.Time
+	ID          int64
+	UserID      int64
+	Name        string
+	AccessKey   string
+	SecretKey   string
+	Proxy       string
+	QuotaRegion string
+	QuotaOn     string
+	QuotaSpot   string
+	QuotaOnName string
+	QuotaSpName string
+	CreatedAt   time.Time
 }
 
 func NewSQLiteStore(path string) (*Store, error) {
@@ -56,7 +63,12 @@ func (s *Store) initSchema(ctx context.Context) error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT NOT NULL UNIQUE,
 			password_hash TEXT NOT NULL,
+			is_admin INTEGER NOT NULL DEFAULT 0,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE TABLE IF NOT EXISTS settings (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
 		);`,
 		`CREATE TABLE IF NOT EXISTS api_keys (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,6 +86,95 @@ func (s *Store) initSchema(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := s.ensureAPIKeyColumns(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureUserColumns(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureSettingsDefaults(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Store) ensureUserColumns(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(users);`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	existing := make(map[string]struct{})
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			colType    string
+			notNull    int
+			defaultVal *string
+			pk         int
+		)
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultVal, &pk); err != nil {
+			return err
+		}
+		existing[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if _, ok := existing["is_admin"]; ok {
+		return nil
+	}
+	_, err = s.db.ExecContext(ctx, "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;")
+	return err
+}
+
+func (s *Store) ensureSettingsDefaults(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO settings (key, value) VALUES ('registration_open', '1');`)
+	return err
+}
+
+func (s *Store) ensureAPIKeyColumns(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(api_keys);`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	existing := make(map[string]struct{})
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			colType    string
+			notNull    int
+			defaultVal *string
+			pk         int
+		)
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultVal, &pk); err != nil {
+			return err
+		}
+		existing[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	columns := map[string]string{
+		"quota_region":  "TEXT NOT NULL DEFAULT ''",
+		"quota_on":      "TEXT NOT NULL DEFAULT ''",
+		"quota_spot":    "TEXT NOT NULL DEFAULT ''",
+		"quota_on_name": "TEXT NOT NULL DEFAULT ''",
+		"quota_sp_name": "TEXT NOT NULL DEFAULT ''",
+	}
+	for name, def := range columns {
+		if _, ok := existing[name]; ok {
+			continue
+		}
+		stmt := fmt.Sprintf("ALTER TABLE api_keys ADD COLUMN %s %s;", name, def)
+		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -84,7 +185,16 @@ func (s *Store) EnsureUser(username, password string) (bool, error) {
 	if username == "" || password == "" {
 		return false, errors.New("username/password required")
 	}
-	selectStmt, err := s.db.PrepareContext(ctx, `SELECT id FROM users WHERE username = ? LIMIT 1;`)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	selectStmt, err := tx.PrepareContext(ctx, `SELECT id FROM users WHERE username = ? LIMIT 1;`)
 	if err != nil {
 		return false, err
 	}
@@ -92,25 +202,79 @@ func (s *Store) EnsureUser(username, password string) (bool, error) {
 	var existingID int64
 	err = selectStmt.QueryRowContext(ctx, username).Scan(&existingID)
 	if err == nil {
+		if err = tx.Commit(); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 	if err != sql.ErrNoRows {
 		return false, err
 	}
+	var userCount int
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM users;`).Scan(&userCount); err != nil {
+		return false, err
+	}
+	isAdmin := 0
+	if userCount == 0 {
+		isAdmin = 1
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return false, err
 	}
-	insertStmt, err := s.db.PrepareContext(ctx, `INSERT INTO users (username, password_hash) VALUES (?, ?);`)
+	insertStmt, err := tx.PrepareContext(ctx, `INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?);`)
 	if err != nil {
 		return false, err
 	}
 	defer insertStmt.Close()
-	_, err = insertStmt.ExecContext(ctx, username, string(hash))
+	_, err = insertStmt.ExecContext(ctx, username, string(hash), isAdmin)
 	if err != nil {
 		return false, err
 	}
+	if err = tx.Commit(); err != nil {
+		return false, err
+	}
 	return true, nil
+}
+
+func (s *Store) CreateUser(ctx context.Context, username, password string) (*User, error) {
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+	if username == "" || password == "" {
+		return nil, errors.New("username/password required")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	var existingID int64
+	if err = tx.QueryRowContext(ctx, `SELECT id FROM users WHERE username = ? LIMIT 1;`, username).Scan(&existingID); err == nil {
+		return nil, errors.New("user exists")
+	}
+	if err != sql.ErrNoRows {
+		return nil, err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	res, err := tx.ExecContext(ctx, `INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 0);`, username, string(hash))
+	if err != nil {
+		return nil, err
+	}
+	insertID, err := res.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &User{ID: insertID, Username: username, PasswordHash: string(hash), IsAdmin: false}, nil
 }
 
 func (s *Store) AuthenticateUser(ctx context.Context, username, password string) (*User, error) {
@@ -119,26 +283,107 @@ func (s *Store) AuthenticateUser(ctx context.Context, username, password string)
 	if username == "" || password == "" {
 		return nil, errors.New("missing credentials")
 	}
-	stmt, err := s.db.PrepareContext(ctx, `SELECT id, username, password_hash FROM users WHERE username = ? LIMIT 1;`)
+	stmt, err := s.db.PrepareContext(ctx, `SELECT id, username, password_hash, is_admin FROM users WHERE username = ? LIMIT 1;`)
 	if err != nil {
 		return nil, err
 	}
 	defer stmt.Close()
 	u := &User{}
-	if err := stmt.QueryRowContext(ctx, username).Scan(&u.ID, &u.Username, &u.PasswordHash); err != nil {
+	var isAdmin int
+	if err := stmt.QueryRowContext(ctx, username).Scan(&u.ID, &u.Username, &u.PasswordHash, &isAdmin); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, errors.New("user not found")
 		}
 		return nil, err
 	}
+	u.IsAdmin = isAdmin == 1
 	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
 		return nil, errors.New("invalid password")
 	}
 	return u, nil
 }
 
+func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
+	stmt, err := s.db.PrepareContext(ctx, `SELECT id, username, password_hash, is_admin FROM users ORDER BY id ASC;`)
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+	rows, err := stmt.QueryContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []User
+	for rows.Next() {
+		var (
+			u       User
+			isAdmin int
+		)
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &isAdmin); err != nil {
+			return nil, err
+		}
+		u.IsAdmin = isAdmin == 1
+		out = append(out, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Store) DeleteUser(ctx context.Context, userID int64) error {
+	if userID == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if _, err = tx.ExecContext(ctx, `DELETE FROM api_keys WHERE user_id = ?;`, userID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM users WHERE id = ?;`, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) CountAdmins(ctx context.Context) (int, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM users WHERE is_admin = 1;`).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (s *Store) RegistrationOpen(ctx context.Context) (bool, error) {
+	var val string
+	if err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'registration_open' LIMIT 1;`).Scan(&val); err != nil {
+		if err == sql.ErrNoRows {
+			return true, nil
+		}
+		return false, err
+	}
+	return strings.TrimSpace(val) != "0", nil
+}
+
+func (s *Store) SetRegistrationOpen(ctx context.Context, open bool) error {
+	value := "0"
+	if open {
+		value = "1"
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES ('registration_open', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;`, value)
+	return err
+}
+
 func (s *Store) ListKeys(ctx context.Context, userID int64) ([]Key, error) {
-	stmt, err := s.db.PrepareContext(ctx, `SELECT id, user_id, name, access_key, secret_key, proxy, created_at FROM api_keys WHERE user_id = ? ORDER BY id DESC;`)
+	stmt, err := s.db.PrepareContext(ctx, `SELECT id, user_id, name, access_key, secret_key, proxy, quota_region, quota_on, quota_spot, quota_on_name, quota_sp_name, created_at FROM api_keys WHERE user_id = ? ORDER BY id DESC;`)
 	if err != nil {
 		return nil, err
 	}
@@ -154,18 +399,23 @@ func (s *Store) ListKeys(ctx context.Context, userID int64) ([]Key, error) {
 			key          Key
 			createdAtRaw string
 		)
-		if err := rows.Scan(&key.ID, &key.UserID, &key.Name, &key.AccessKey, &key.SecretKey, &key.Proxy, &createdAtRaw); err != nil {
+		if err := rows.Scan(&key.ID, &key.UserID, &key.Name, &key.AccessKey, &key.SecretKey, &key.Proxy, &key.QuotaRegion, &key.QuotaOn, &key.QuotaSpot, &key.QuotaOnName, &key.QuotaSpName, &createdAtRaw); err != nil {
 			return nil, err
 		}
 		key.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAtRaw)
 		out = append(out, Key{
-			ID:        key.ID,
-			UserID:    key.UserID,
-			Name:      key.Name,
-			AccessKey: key.AccessKey,
-			SecretKey: key.SecretKey,
-			Proxy:     key.Proxy,
-			CreatedAt: key.CreatedAt,
+			ID:          key.ID,
+			UserID:      key.UserID,
+			Name:        key.Name,
+			AccessKey:   key.AccessKey,
+			SecretKey:   key.SecretKey,
+			Proxy:       key.Proxy,
+			QuotaRegion: key.QuotaRegion,
+			QuotaOn:     key.QuotaOn,
+			QuotaSpot:   key.QuotaSpot,
+			QuotaOnName: key.QuotaOnName,
+			QuotaSpName: key.QuotaSpName,
+			CreatedAt:   key.CreatedAt,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -237,5 +487,18 @@ func (s *Store) UpdateKey(ctx context.Context, userID, keyID int64, name, access
 	}
 	defer stmt.Close()
 	_, err = stmt.ExecContext(ctx, name, accessKey, secretKey, proxy, keyID, userID)
+	return err
+}
+
+func (s *Store) UpdateKeyQuota(ctx context.Context, userID, keyID int64, region, onVal, spotVal, onName, spotName string) error {
+	if keyID == 0 {
+		return errors.New("missing key id")
+	}
+	stmt, err := s.db.PrepareContext(ctx, `UPDATE api_keys SET quota_region = ?, quota_on = ?, quota_spot = ?, quota_on_name = ?, quota_sp_name = ? WHERE id = ? AND user_id = ?;`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.ExecContext(ctx, region, onVal, spotVal, onName, spotName, keyID, userID)
 	return err
 }

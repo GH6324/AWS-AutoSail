@@ -2,15 +2,20 @@ package main
 
 import (
 	"crypto/rand"
+	"embed"
 	"encoding/hex"
 	"html/template"
+	"log"
+	"math/big"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/gin-gonic/gin"
 	"github.com/patrickmn/go-cache"
 
@@ -18,6 +23,8 @@ import (
 	"aws-lightsail-go/internal/session"
 	"aws-lightsail-go/internal/store"
 )
+
+const maxFlashErrorLen = 200
 
 type Flash struct {
 	Success string
@@ -31,6 +38,12 @@ type PageData struct {
 	CSRFToken string
 
 	Username string
+	IsAdmin  bool
+
+	RegistrationOpen    bool
+	RegistrationCaptcha string
+	Users               []store.User
+	CurrentUserID       int64
 
 	HasCreds    bool
 	KeyName     string
@@ -41,9 +54,11 @@ type PageData struct {
 	ActiveKey   string
 	PendingKey  int64
 
-	Region  string
-	Regions []RegionOption
-	AZ      string
+	Region        string
+	CreateRegions []RegionOption
+	ManageRegions []RegionOption
+	QuotaRegions  []RegionOption
+	AZ            string
 
 	// Tabs: create/manage/quota
 	Tab string
@@ -51,22 +66,31 @@ type PageData struct {
 	Flash Flash
 
 	// Create form
-	CreateEnableFW  bool
-	CreateIPType    string
-	CreateBlueprint string
-	CreateBundle    string
-	CreateRootPwd   string
+	CreateEnableFW   bool
+	CreateIPType     string
+	CreateBlueprint  string
+	CreateBundle     string
+	CreateRootPwd    string
+	CreateService    string
+	CreateEC2AMI     string
+	CreateEC2Type    string
+	CreateEC2IPv6    bool
+	CreateBundleName string
 
 	Blueprints []Option
 	Bundles    []Option
 	IPTypes    []Option
+	EC2AMIs    []Option
+	EC2Types   []Option
 
 	// Proxy check
 	ProxyExitIP  string
 	ProxyExitASN string
 
 	// Manage
-	Instances []aws.InstanceView
+	Instances     []aws.InstanceView
+	EC2Instances  []aws.EC2InstanceView
+	ManageService string
 
 	// Quota
 	QuotaRegion string
@@ -76,12 +100,27 @@ type PageData struct {
 	QuotaSpName string
 }
 
+func formatFlashError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.TrimSpace(err.Error())
+	msg = strings.ReplaceAll(msg, "\n", " ")
+	msg = strings.ReplaceAll(msg, "\r", " ")
+	if len(msg) > maxFlashErrorLen {
+		msg = msg[:maxFlashErrorLen] + "..."
+	}
+	return msg
+}
+
 var (
 	// cache instances list for 10s
 	instCache = cache.New(10*time.Second, 30*time.Second)
 	appStore  *store.Store
-	loginHint string
 )
+
+//go:embed templates/*.html
+var templateFS embed.FS
 
 type RegionOption struct {
 	ID   string
@@ -105,7 +144,7 @@ func mustEnvInt(key string, def int) int {
 	return i
 }
 
-var regionOptions = []RegionOption{
+var lightsailRegionOptions = []RegionOption{
 	{ID: "ap-northeast-1", Name: "东京 Tokyo"},
 	{ID: "ap-northeast-2", Name: "首尔 Seoul"},
 	{ID: "ap-southeast-1", Name: "新加坡 Singapore"},
@@ -120,6 +159,65 @@ var regionOptions = []RegionOption{
 	{ID: "eu-west-2", Name: "伦敦 London"},
 	{ID: "eu-west-3", Name: "巴黎 Paris"},
 	{ID: "eu-north-1", Name: "斯德哥尔摩 Stockholm"},
+}
+
+var ec2RegionOptions = []RegionOption{
+	{ID: "af-south-1", Name: "开普敦 Cape Town"},
+	{ID: "ap-east-1", Name: "香港 Hong Kong"},
+	{ID: "ap-northeast-1", Name: "东京 Tokyo"},
+	{ID: "ap-northeast-2", Name: "首尔 Seoul"},
+	{ID: "ap-northeast-3", Name: "大阪 Osaka"},
+	{ID: "ap-south-1", Name: "孟买 Mumbai"},
+	{ID: "ap-south-2", Name: "海得拉巴 Hyderabad"},
+	{ID: "ap-southeast-1", Name: "新加坡 Singapore"},
+	{ID: "ap-southeast-2", Name: "悉尼 Sydney"},
+	{ID: "ap-southeast-3", Name: "雅加达 Jakarta"},
+	{ID: "ap-southeast-4", Name: "墨尔本 Melbourne"},
+	{ID: "ca-central-1", Name: "加拿大（中部） Canada Central"},
+	{ID: "ca-west-1", Name: "加拿大（西部） Canada West"},
+	{ID: "eu-central-1", Name: "法兰克福 Frankfurt"},
+	{ID: "eu-central-2", Name: "苏黎世 Zurich"},
+	{ID: "eu-north-1", Name: "斯德哥尔摩 Stockholm"},
+	{ID: "eu-south-1", Name: "米兰 Milan"},
+	{ID: "eu-south-2", Name: "西班牙 Spain"},
+	{ID: "eu-west-1", Name: "爱尔兰 Ireland"},
+	{ID: "eu-west-2", Name: "伦敦 London"},
+	{ID: "eu-west-3", Name: "巴黎 Paris"},
+	{ID: "il-central-1", Name: "以色列（中部） Israel"},
+	{ID: "me-central-1", Name: "阿联酋 UAE"},
+	{ID: "me-south-1", Name: "巴林 Bahrain"},
+	{ID: "sa-east-1", Name: "圣保罗 São Paulo"},
+	{ID: "us-east-1", Name: "弗吉尼亚 N. Virginia"},
+	{ID: "us-east-2", Name: "俄亥俄 Ohio"},
+	{ID: "us-west-1", Name: "北加州 N. California"},
+	{ID: "us-west-2", Name: "俄勒冈 Oregon"},
+}
+
+func regionOptionsForService(service string) []RegionOption {
+	if service == "ec2" {
+		return ec2RegionOptions
+	}
+	return lightsailRegionOptions
+}
+
+func allRegionOptions() []RegionOption {
+	all := make([]RegionOption, 0, len(ec2RegionOptions)+len(lightsailRegionOptions))
+	all = append(all, ec2RegionOptions...)
+	for _, r := range lightsailRegionOptions {
+		if !containsRegion(all, r.ID) {
+			all = append(all, r)
+		}
+	}
+	return all
+}
+
+func containsRegion(list []RegionOption, id string) bool {
+	for _, r := range list {
+		if r.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 var blueprintOptions = []Option{
@@ -144,6 +242,43 @@ var ipTypeOptions = []Option{
 	{ID: "ipv4", Name: "仅 IPv4"},
 }
 
+var ec2AMIOptions = []Option{
+	{ID: "ubuntu-24.04", Name: "Ubuntu 24.04 LTS"},
+	{ID: "ubuntu-22.04", Name: "Ubuntu 22.04 LTS"},
+	{ID: "debian-12", Name: "Debian 12"},
+	{ID: "amzn-2023", Name: "Amazon Linux 2023"},
+	{ID: "custom", Name: "自定义 AMI ID"},
+}
+
+var ec2InstanceTypes = []Option{
+	{ID: "t3.micro", Name: "t3.micro (2 vCPU, 1 GB)"},
+	{ID: "t3.small", Name: "t3.small (2 vCPU, 2 GB)"},
+	{ID: "t3.medium", Name: "t3.medium (2 vCPU, 4 GB)"},
+	{ID: "t3.large", Name: "t3.large (2 vCPU, 8 GB)"},
+	{ID: "t3.xlarge", Name: "t3.xlarge (4 vCPU, 16 GB)"},
+	{ID: "t3a.micro", Name: "t3a.micro (2 vCPU, 1 GB)"},
+	{ID: "t3a.small", Name: "t3a.small (2 vCPU, 2 GB)"},
+	{ID: "t3a.medium", Name: "t3a.medium (2 vCPU, 4 GB)"},
+	{ID: "t3a.large", Name: "t3a.large (2 vCPU, 8 GB)"},
+	{ID: "t4g.micro", Name: "t4g.micro (2 vCPU, 1 GB, ARM)"},
+	{ID: "t4g.small", Name: "t4g.small (2 vCPU, 2 GB, ARM)"},
+	{ID: "t4g.medium", Name: "t4g.medium (2 vCPU, 4 GB, ARM)"},
+	{ID: "t4g.large", Name: "t4g.large (2 vCPU, 8 GB, ARM)"},
+	{ID: "m6i.large", Name: "m6i.large (2 vCPU, 8 GB)"},
+	{ID: "m6i.xlarge", Name: "m6i.xlarge (4 vCPU, 16 GB)"},
+	{ID: "m6g.large", Name: "m6g.large (2 vCPU, 8 GB, ARM)"},
+	{ID: "m6g.xlarge", Name: "m6g.xlarge (4 vCPU, 16 GB, ARM)"},
+	{ID: "c6i.large", Name: "c6i.large (2 vCPU, 4 GB)"},
+	{ID: "c6i.xlarge", Name: "c6i.xlarge (4 vCPU, 8 GB)"},
+	{ID: "c6g.large", Name: "c6g.large (2 vCPU, 4 GB, ARM)"},
+	{ID: "c6g.xlarge", Name: "c6g.xlarge (4 vCPU, 8 GB, ARM)"},
+	{ID: "r6i.large", Name: "r6i.large (2 vCPU, 16 GB)"},
+	{ID: "r6i.xlarge", Name: "r6i.xlarge (4 vCPU, 32 GB)"},
+	{ID: "r6g.large", Name: "r6g.large (2 vCPU, 16 GB, ARM)"},
+	{ID: "r6g.xlarge", Name: "r6g.xlarge (4 vCPU, 32 GB, ARM)"},
+	{ID: "custom", Name: "自定义实例类型"},
+}
+
 var ipv6BundleMap = map[string]string{
 	"nano_3_0":   "nano_ipv6_3_0",
 	"micro_3_0":  "micro_ipv6_3_0",
@@ -153,7 +288,7 @@ var ipv6BundleMap = map[string]string{
 }
 
 func regionLabel(id string) string {
-	for _, r := range regionOptions {
+	for _, r := range allRegionOptions() {
 		if r.ID == id {
 			return r.Name
 		}
@@ -191,6 +326,23 @@ func genCSRFToken() string {
 	return hex.EncodeToString(b)
 }
 
+func randInt(min, max int) int {
+	if max <= min {
+		return min
+	}
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max-min+1)))
+	if err != nil {
+		return min
+	}
+	return int(n.Int64()) + min
+}
+
+func genRegistrationCaptcha() (string, string) {
+	left := randInt(2, 9)
+	right := randInt(2, 9)
+	return strconv.Itoa(left) + " + " + strconv.Itoa(right), strconv.Itoa(left + right)
+}
+
 func main() {
 	var err error
 	port := mustEnvInt("PORT", 9000)
@@ -210,14 +362,10 @@ func main() {
 	defaultUsername := strings.TrimSpace(os.Getenv("APP_USERNAME"))
 	if defaultUsername == "" {
 		defaultUsername = "admin"
-		loginHint = "未设置 APP_USERNAME/APP_PASSWORD，已启用默认账号 admin / admin123，请尽快修改。"
 	}
 	defaultPassword := strings.TrimSpace(os.Getenv("APP_PASSWORD"))
 	if defaultPassword == "" {
 		defaultPassword = "admin123"
-		if loginHint == "" {
-			loginHint = "未设置 APP_USERNAME/APP_PASSWORD，已启用默认账号 admin / admin123，请尽快修改。"
-		}
 	}
 	if _, err := appStore.EnsureUser(defaultUsername, defaultPassword); err != nil {
 		panic(err)
@@ -227,10 +375,10 @@ func main() {
 	r.Use(gin.Logger(), gin.Recovery())
 
 	// templates
-	r.SetFuncMap(template.FuncMap{
+	tmpl := template.Must(template.New("").Funcs(template.FuncMap{
 		"regionLabel": regionLabel,
-	})
-	r.LoadHTMLGlob("templates/*.html")
+	}).ParseFS(templateFS, "templates/*.html"))
+	r.SetHTMLTemplate(tmpl)
 
 	// session store
 	store := session.NewStore()
@@ -277,9 +425,11 @@ func main() {
 			return
 		}
 		s := session.Must(c)
+		regOpen, _ := appStore.RegistrationOpen(c.Request.Context())
 		data := PageData{
-			Title:     "AutoSail 登录",
-			CSRFToken: s.GetString("csrf_token", ""),
+			Title:            "AutoSail 登录",
+			CSRFToken:        s.GetString("csrf_token", ""),
+			RegistrationOpen: regOpen,
 		}
 		switch c.Query("msg") {
 		case "bad":
@@ -288,9 +438,10 @@ func main() {
 			data.Flash.Error = "请求已失效，请重试"
 		case "logout":
 			data.Flash.Info = "已退出登录"
-		}
-		if loginHint != "" && data.Flash.Error == "" {
-			data.Flash.Info = loginHint
+		case "regclosed":
+			data.Flash.Warn = "注册已关闭，请联系管理员"
+		case "registered":
+			data.Flash.Success = "注册成功，请登录"
 		}
 		c.HTML(http.StatusOK, "login", data)
 	})
@@ -306,13 +457,83 @@ func main() {
 		s := session.Must(c)
 		s.SetString("user_id", strconv.FormatInt(user.ID, 10))
 		s.SetString("username", user.Username)
+		if user.IsAdmin {
+			s.SetString("is_admin", "1")
+		} else {
+			s.SetString("is_admin", "0")
+		}
 		c.Redirect(http.StatusFound, "/")
+	})
+
+	r.GET("/register", func(c *gin.Context) {
+		if isLoggedIn(session.Must(c)) {
+			c.Redirect(http.StatusFound, "/")
+			return
+		}
+		regOpen, _ := appStore.RegistrationOpen(c.Request.Context())
+		if !regOpen {
+			c.Redirect(http.StatusFound, "/login?msg=regclosed")
+			return
+		}
+		s := session.Must(c)
+		captchaQuestion, captchaAnswer := genRegistrationCaptcha()
+		s.SetString("reg_captcha_answer", captchaAnswer)
+		data := PageData{
+			Title:               "AutoSail 注册",
+			CSRFToken:           s.GetString("csrf_token", ""),
+			RegistrationOpen:    regOpen,
+			RegistrationCaptcha: captchaQuestion,
+		}
+		switch c.Query("msg") {
+		case "exists":
+			data.Flash.Error = "用户名已存在，请更换"
+		case "invalid":
+			data.Flash.Error = "用户名和密码不能为空"
+		case "captcha":
+			data.Flash.Error = "验证码错误，请重试"
+		case "failed":
+			data.Flash.Error = "注册失败，请稍后重试"
+		}
+		c.HTML(http.StatusOK, "register", data)
+	})
+
+	r.POST("/register", func(c *gin.Context) {
+		regOpen, _ := appStore.RegistrationOpen(c.Request.Context())
+		if !regOpen {
+			c.Redirect(http.StatusFound, "/login?msg=regclosed")
+			return
+		}
+		s := session.Must(c)
+		captchaAnswer := strings.TrimSpace(c.PostForm("captcha"))
+		expectedCaptcha := strings.TrimSpace(s.GetString("reg_captcha_answer", ""))
+		if expectedCaptcha == "" || captchaAnswer != expectedCaptcha {
+			c.Redirect(http.StatusFound, "/register?msg=captcha")
+			return
+		}
+		username := strings.TrimSpace(c.PostForm("username"))
+		password := strings.TrimSpace(c.PostForm("password"))
+		_, err := appStore.CreateUser(c.Request.Context(), username, password)
+		if err != nil {
+			if strings.Contains(err.Error(), "required") {
+				c.Redirect(http.StatusFound, "/register?msg=invalid")
+				return
+			}
+			if strings.Contains(err.Error(), "exists") {
+				c.Redirect(http.StatusFound, "/register?msg=exists")
+				return
+			}
+			c.Redirect(http.StatusFound, "/register?msg=failed")
+			return
+		}
+		s.SetString("reg_captcha_answer", "")
+		c.Redirect(http.StatusFound, "/login?msg=registered")
 	})
 
 	r.POST("/logout", func(c *gin.Context) {
 		s := session.Must(c)
 		s.SetString("user_id", "")
 		s.SetString("username", "")
+		s.SetString("is_admin", "")
 		s.SetString("key_id", "")
 		s.SetString("pending_key_id", "")
 		c.Redirect(http.StatusFound, "/login?msg=logout")
@@ -323,7 +544,15 @@ func main() {
 			c.Next()
 			return
 		}
+		if c.Request.Method == http.MethodPost && c.Request.URL.Path == "/register" {
+			c.Next()
+			return
+		}
 		if c.Request.URL.Path == "/login" {
+			c.Next()
+			return
+		}
+		if c.Request.URL.Path == "/register" {
 			c.Next()
 			return
 		}
@@ -338,12 +567,30 @@ func main() {
 	r.GET("/", func(c *gin.Context) {
 		s := session.Must(c)
 		userID, _ := userIDFromSession(s)
+		isAdmin := isAdminSession(s)
+		regOpen, _ := appStore.RegistrationOpen(c.Request.Context())
 
 		tab := c.Query("tab")
 		if tab == "" {
 			tab = s.GetString("tab", "create")
 		} else {
 			s.SetString("tab", tab)
+		}
+		s.SetString("last_tab", tab)
+
+		serviceQuery := strings.TrimSpace(c.Query("service"))
+		if tab == "create" {
+			if serviceQuery == "" {
+				serviceQuery = s.GetString("create_service", "lightsail")
+			} else {
+				s.SetString("create_service", serviceQuery)
+			}
+		} else if tab == "manage" {
+			if serviceQuery == "" {
+				serviceQuery = s.GetString("manage_service", "lightsail")
+			} else {
+				s.SetString("manage_service", serviceQuery)
+			}
 		}
 
 		region := normalizeRegion(c.Query("region"))
@@ -375,34 +622,74 @@ func main() {
 		createBlueprint := s.GetString("create_blueprint", "ubuntu_24_04")
 		createBundle := s.GetString("create_bundle", "nano_3_0")
 		createFW := s.GetString("create_fw_all", "1") == "1"
+		createService := s.GetString("create_service", "lightsail")
+		manageService := s.GetString("manage_service", "lightsail")
+		createEC2AMI := s.GetString("create_ec2_ami", "ubuntu-22.04")
+		createEC2Type := s.GetString("create_ec2_type", "t3.micro")
+		createEC2IPv6 := s.GetString("create_ec2_ipv6", "0") == "1"
+		createBundleName := findOptionName(bundleOptions, createBundle)
+		createRegions := regionOptionsForService(createService)
+		manageRegions := regionOptionsForService(manageService)
 
 		activeAK := strings.TrimSpace(keyAccessKey(activeKey))
 		activeProxy := strings.TrimSpace(keyProxy(activeKey))
 		activeHasCreds := activeKey != nil && activeAK != "" && strings.TrimSpace(activeKey.SecretKey) != ""
 
 		data := PageData{
-			Title:           "AutoSail",
-			CSRFToken:       s.GetString("csrf_token", ""),
-			Username:        username,
-			HasCreds:        activeHasCreds,
-			KeyName:         keyName(formKey),
-			AK:              keyAccessKey(formKey),
-			Proxy:           keyProxy(formKey),
-			Keys:            keys,
-			ActiveKeyID:     keyID(activeKey),
-			ActiveKey:       keyName(activeKey),
-			PendingKey:      pendingKeyID,
-			Region:          region,
-			Regions:         regionOptions,
-			AZ:              az,
-			Tab:             tab,
-			CreateIPType:    createIPType,
-			CreateBlueprint: createBlueprint,
-			CreateBundle:    createBundle,
-			CreateEnableFW:  createFW,
-			Blueprints:      blueprintOptions,
-			Bundles:         bundleOptions,
-			IPTypes:         ipTypeOptions,
+			Title:            "AutoSail",
+			CSRFToken:        s.GetString("csrf_token", ""),
+			Username:         username,
+			IsAdmin:          isAdmin,
+			RegistrationOpen: regOpen,
+			CurrentUserID:    userID,
+			HasCreds:         activeHasCreds,
+			KeyName:          keyName(formKey),
+			AK:               keyAccessKey(formKey),
+			Proxy:            keyProxy(formKey),
+			Keys:             keys,
+			ActiveKeyID:      keyID(activeKey),
+			ActiveKey:        keyName(activeKey),
+			PendingKey:       pendingKeyID,
+			Region:           region,
+			CreateRegions:    createRegions,
+			ManageRegions:    manageRegions,
+			QuotaRegions:     ec2RegionOptions,
+			AZ:               az,
+			Tab:              tab,
+			CreateIPType:     createIPType,
+			CreateBlueprint:  createBlueprint,
+			CreateBundle:     createBundle,
+			CreateEnableFW:   createFW,
+			CreateService:    createService,
+			CreateEC2AMI:     createEC2AMI,
+			CreateEC2Type:    createEC2Type,
+			CreateEC2IPv6:    createEC2IPv6,
+			CreateBundleName: createBundleName,
+			Blueprints:       blueprintOptions,
+			Bundles:          bundleOptions,
+			IPTypes:          ipTypeOptions,
+			EC2AMIs:          ec2AMIOptions,
+			EC2Types:         ec2InstanceTypes,
+			ManageService:    manageService,
+		}
+		if isAdmin {
+			users, err := appStore.ListUsers(c.Request.Context())
+			if err == nil {
+				data.Users = users
+			}
+		}
+
+		data.QuotaRegion = "us-east-1"
+		if activeKey != nil {
+			if strings.TrimSpace(activeKey.QuotaRegion) != "" {
+				data.QuotaRegion = activeKey.QuotaRegion
+			}
+			data.QuotaOn = activeKey.QuotaOn
+			data.QuotaSpot = activeKey.QuotaSpot
+			data.QuotaOnName = activeKey.QuotaOnName
+			data.QuotaSpName = activeKey.QuotaSpName
+		} else {
+			data.QuotaRegion = s.GetString("quota_region", "us-east-1")
 		}
 
 		switch c.Query("msg") {
@@ -427,7 +714,12 @@ func main() {
 		case "created":
 			data.Flash.Success = "✅ 创建请求已提交（稍等 1-2 分钟后去『管理』查看）"
 		case "create_failed":
-			data.Flash.Error = "创建失败：请查看服务器日志/检查权限/区域是否可用"
+			errMsg := strings.TrimSpace(c.Query("err"))
+			if errMsg != "" {
+				data.Flash.Error = "创建失败：" + errMsg
+			} else {
+				data.Flash.Error = "创建失败：请查看服务器日志/检查权限/区域是否可用"
+			}
 		case "quota_ok":
 			data.Flash.Success = "✅ 配额测试完成"
 		case "quota_err":
@@ -440,10 +732,18 @@ func main() {
 			data.Flash.Success = "已提交全端口开放"
 		case "openall_failed":
 			data.Flash.Error = "全端口开放失败（详情看日志）"
-		case "swapip_ok":
-			data.Flash.Success = "✅ 换静态 IP 已提交/完成（如刚申请需稍等同步）"
-		case "swapip_failed":
-			data.Flash.Error = "换静态 IP 失败（可能是 IPv6-only 或额度/权限问题）"
+		case "start_ok":
+			data.Flash.Success = "已提交启动"
+		case "start_failed":
+			data.Flash.Error = "启动失败（详情看日志）"
+		case "stop_ok":
+			data.Flash.Success = "已提交停止"
+		case "stop_failed":
+			data.Flash.Error = "停止失败（详情看日志）"
+		case "terminate_ok":
+			data.Flash.Success = "已提交终止"
+		case "terminate_failed":
+			data.Flash.Error = "终止失败（详情看日志）"
 		case "delete_ok":
 			data.Flash.Success = "已提交删除（如有静态 IP 已尝试释放）"
 		case "delete_failed":
@@ -452,20 +752,40 @@ func main() {
 
 		// manage list
 		if tab == "manage" && activeHasCreds {
-			key := strings.Join([]string{"inst", region, activeAK, activeProxy}, "|")
-			if v, ok := instCache.Get(key); ok {
-				data.Instances = v.([]aws.InstanceView)
-			} else {
-				cli, err := aws.NewLightsailClient(c.Request.Context(), region, activeAK, activeKey.SecretKey, activeProxy)
-				if err != nil {
-					data.Flash.Error = "创建 Lightsail client 失败：" + err.Error()
+			if manageService == "ec2" {
+				key := strings.Join([]string{"ec2inst", region, activeAK, activeProxy}, "|")
+				if v, ok := instCache.Get(key); ok {
+					data.EC2Instances = v.([]aws.EC2InstanceView)
 				} else {
-					list, err := aws.ListInstances(c.Request.Context(), cli)
+					cli, err := aws.NewEC2Client(c.Request.Context(), region, activeAK, activeKey.SecretKey, activeProxy)
 					if err != nil {
-						data.Flash.Error = "拉取实例失败：" + err.Error()
+						data.Flash.Error = "创建 EC2 client 失败：" + err.Error()
 					} else {
-						data.Instances = list
-						instCache.Set(key, list, cache.DefaultExpiration)
+						list, err := aws.ListEC2Instances(c.Request.Context(), cli)
+						if err != nil {
+							data.Flash.Error = "拉取 EC2 实例失败：" + err.Error()
+						} else {
+							data.EC2Instances = list
+							instCache.Set(key, list, cache.DefaultExpiration)
+						}
+					}
+				}
+			} else {
+				key := strings.Join([]string{"inst", region, activeAK, activeProxy}, "|")
+				if v, ok := instCache.Get(key); ok {
+					data.Instances = v.([]aws.InstanceView)
+				} else {
+					cli, err := aws.NewLightsailClient(c.Request.Context(), region, activeAK, activeKey.SecretKey, activeProxy)
+					if err != nil {
+						data.Flash.Error = "创建 Lightsail client 失败：" + err.Error()
+					} else {
+						list, err := aws.ListInstances(c.Request.Context(), cli)
+						if err != nil {
+							data.Flash.Error = "拉取实例失败：" + err.Error()
+						} else {
+							data.Instances = list
+							instCache.Set(key, list, cache.DefaultExpiration)
+						}
 					}
 				}
 			}
@@ -473,16 +793,52 @@ func main() {
 			data.Flash.Warn = "请先启用一个有效密钥再查看实例列表"
 		}
 
-		// quota result from session
-		if tab == "quota" {
-			data.QuotaRegion = s.GetString("quota_region", region)
-			data.QuotaOn = s.GetString("quota_on", "")
-			data.QuotaSpot = s.GetString("quota_spot", "")
-			data.QuotaOnName = s.GetString("quota_on_name", "")
-			data.QuotaSpName = s.GetString("quota_sp_name", "")
-		}
-
 		c.HTML(http.StatusOK, "layout", data)
+	})
+
+	r.POST("/admin/registration", func(c *gin.Context) {
+		s := session.Must(c)
+		if !isAdminSession(s) {
+			c.Redirect(http.StatusFound, "/")
+			return
+		}
+		open := strings.TrimSpace(c.PostForm("open")) == "1"
+		_ = appStore.SetRegistrationOpen(c.Request.Context(), open)
+		c.Redirect(http.StatusFound, "/")
+	})
+
+	r.POST("/admin/users/delete", func(c *gin.Context) {
+		s := session.Must(c)
+		if !isAdminSession(s) {
+			c.Redirect(http.StatusFound, "/")
+			return
+		}
+		currentUserID, _ := userIDFromSession(s)
+		idStr := strings.TrimSpace(c.PostForm("user_id"))
+		if idStr == "" {
+			c.Redirect(http.StatusFound, "/")
+			return
+		}
+		userID, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil || userID == 0 || userID == currentUserID {
+			c.Redirect(http.StatusFound, "/")
+			return
+		}
+		users, err := appStore.ListUsers(c.Request.Context())
+		if err == nil {
+			for _, u := range users {
+				if u.ID == userID && u.IsAdmin {
+					adminCount, err := appStore.CountAdmins(c.Request.Context())
+					if err != nil || adminCount <= 1 {
+						c.Redirect(http.StatusFound, "/")
+						return
+					}
+					break
+				}
+			}
+		}
+		_ = appStore.DeleteUser(c.Request.Context(), userID)
+		c.Redirect(http.StatusFound, "/")
 	})
 
 	// Save creds (留空不覆盖)
@@ -643,6 +999,12 @@ func main() {
 		sk := strings.TrimSpace(activeKey.SecretKey)
 		proxy := strings.TrimSpace(activeKey.Proxy)
 
+		service := strings.TrimSpace(c.PostForm("service"))
+		if service == "" {
+			service = "lightsail"
+		}
+		s.SetString("create_service", service)
+
 		region := normalizeRegion(strings.TrimSpace(c.PostForm("region")))
 		az := strings.TrimSpace(c.PostForm("az"))
 		if region == "" {
@@ -653,6 +1015,83 @@ func main() {
 		}
 		s.SetString("region", region)
 		s.SetString("az", az)
+
+		if service == "ec2" {
+			amiChoice := strings.TrimSpace(c.PostForm("ec2_ami"))
+			instanceType := strings.TrimSpace(c.PostForm("ec2_type"))
+			instanceTypeCustom := strings.TrimSpace(c.PostForm("ec2_type_custom"))
+			enableIPv6 := strings.TrimSpace(c.PostForm("ec2_ipv6")) == "1"
+			countStr := strings.TrimSpace(c.PostForm("ec2_count"))
+			rootPwd := strings.TrimSpace(c.PostForm("root_pwd"))
+			if amiChoice != "" {
+				s.SetString("create_ec2_ami", amiChoice)
+			}
+			if instanceType != "" {
+				s.SetString("create_ec2_type", instanceType)
+			}
+			if enableIPv6 {
+				s.SetString("create_ec2_ipv6", "1")
+			} else {
+				s.SetString("create_ec2_ipv6", "0")
+			}
+
+			count := int32(1)
+			if countStr != "" {
+				if parsed, err := strconv.Atoi(countStr); err == nil && parsed > 0 {
+					count = int32(parsed)
+				}
+			}
+
+			cli, err := aws.NewEC2Client(c.Request.Context(), region, ak, sk, proxy)
+			if err != nil {
+				c.Redirect(http.StatusFound, "/?tab=create&region="+region+"&msg=err_client&service=ec2")
+				return
+			}
+
+			if instanceType == "custom" {
+				instanceType = instanceTypeCustom
+			}
+
+			amiID, err := aws.ResolveEC2AMI(c.Request.Context(), cli, amiChoice)
+			if err != nil {
+				errMsg := formatFlashError(err)
+				if errMsg != "" {
+					c.Redirect(http.StatusFound, "/?tab=create&region="+region+"&msg=create_failed&service=ec2&err="+url.QueryEscape(errMsg))
+				} else {
+					c.Redirect(http.StatusFound, "/?tab=create&region="+region+"&msg=create_failed&service=ec2")
+				}
+				return
+			}
+
+			userData := ""
+			if rootPwd != "" {
+				userData = aws.BuildRootPasswordUserData(rootPwd)
+			}
+
+			err = aws.CreateEC2Instance(c.Request.Context(), cli, aws.CreateEC2InstanceInput{
+				Name:         "ec2-" + strconv.FormatInt(time.Now().Unix(), 10),
+				AMI:          amiID,
+				InstanceType: instanceType,
+				Count:        count,
+				UserData:     userData,
+				EnableIPv6:   enableIPv6,
+			})
+			if err != nil {
+				errMsg := formatFlashError(err)
+				if errMsg != "" {
+					c.Redirect(http.StatusFound, "/?tab=create&region="+region+"&msg=create_failed&service=ec2&err="+url.QueryEscape(errMsg))
+				} else {
+					c.Redirect(http.StatusFound, "/?tab=create&region="+region+"&msg=create_failed&service=ec2")
+				}
+				return
+			}
+
+			key := strings.Join([]string{"ec2inst", region, ak, proxy}, "|")
+			instCache.Delete(key)
+
+			c.Redirect(http.StatusFound, "/?tab=manage&region="+region+"&msg=created&service=ec2")
+			return
+		}
 
 		ipType := strings.TrimSpace(c.PostForm("ip_type"))
 		if ipType == "" {
@@ -755,9 +1194,17 @@ func main() {
 		if region == "" {
 			region = normalizeRegion(s.GetString("region", "us-east-1"))
 		}
-		key := strings.Join([]string{"inst", region, ak, proxy}, "|")
+		service := strings.TrimSpace(c.PostForm("service"))
+		if service == "" {
+			service = s.GetString("manage_service", "lightsail")
+		}
+		keyPrefix := "inst"
+		if service == "ec2" {
+			keyPrefix = "ec2inst"
+		}
+		key := strings.Join([]string{keyPrefix, region, ak, proxy}, "|")
 		instCache.Delete(key)
-		c.Redirect(http.StatusFound, "/?tab=manage&region="+region)
+		c.Redirect(http.StatusFound, "/?tab=manage&region="+region+"&service="+service)
 	})
 
 	r.POST("/aws/delete", func(c *gin.Context) {
@@ -772,6 +1219,36 @@ func main() {
 		})
 	})
 
+	r.POST("/aws/ec2/start", func(c *gin.Context) {
+		doManageActionEC2(c, "start", func(ctx *gin.Context, cli *ec2.Client, id string) error {
+			return aws.StartEC2Instance(ctx.Request.Context(), cli, id)
+		})
+	})
+
+	r.POST("/aws/ec2/stop", func(c *gin.Context) {
+		doManageActionEC2(c, "stop", func(ctx *gin.Context, cli *ec2.Client, id string) error {
+			return aws.StopEC2Instance(ctx.Request.Context(), cli, id)
+		})
+	})
+
+	r.POST("/aws/ec2/reboot", func(c *gin.Context) {
+		doManageActionEC2(c, "reboot", func(ctx *gin.Context, cli *ec2.Client, id string) error {
+			return aws.RebootEC2Instance(ctx.Request.Context(), cli, id)
+		})
+	})
+
+	r.POST("/aws/ec2/terminate", func(c *gin.Context) {
+		doManageActionEC2(c, "terminate", func(ctx *gin.Context, cli *ec2.Client, id string) error {
+			return aws.TerminateEC2Instance(ctx.Request.Context(), cli, id)
+		})
+	})
+
+	r.POST("/aws/ec2/openall", func(c *gin.Context) {
+		doManageActionEC2(c, "openall", func(ctx *gin.Context, cli *ec2.Client, id string) error {
+			return aws.OpenAllEC2Ports(ctx.Request.Context(), cli, id)
+		})
+	})
+
 	// Quota test
 	r.POST("/aws/quota", func(c *gin.Context) {
 		s := session.Must(c)
@@ -779,7 +1256,8 @@ func main() {
 		keys, _ := appStore.ListKeys(c.Request.Context(), userID)
 		activeKey, _ := resolveActiveKey(s, keys)
 		if activeKey == nil || strings.TrimSpace(activeKey.AccessKey) == "" || strings.TrimSpace(activeKey.SecretKey) == "" {
-			c.Redirect(http.StatusFound, "/?tab=quota&msg=needuse")
+			lastTab := s.GetString("last_tab", "create")
+			c.Redirect(http.StatusFound, "/?tab="+lastTab+"&msg=needuse")
 			return
 		}
 		ak := strings.TrimSpace(activeKey.AccessKey)
@@ -787,8 +1265,11 @@ func main() {
 		proxy := strings.TrimSpace(activeKey.Proxy)
 
 		region := normalizeRegion(strings.TrimSpace(c.PostForm("quota_region")))
+		if region == "" && activeKey != nil {
+			region = normalizeRegion(activeKey.QuotaRegion)
+		}
 		if region == "" {
-			region = normalizeRegion(s.GetString("region", "us-east-1"))
+			region = normalizeRegion(s.GetString("quota_region", "us-east-1"))
 		}
 		s.SetString("quota_region", region)
 
@@ -796,7 +1277,8 @@ func main() {
 		if err != nil {
 			s.SetString("quota_on", "")
 			s.SetString("quota_spot", "")
-			c.Redirect(http.StatusFound, "/?tab=quota&msg=quota_err")
+			lastTab := s.GetString("last_tab", "create")
+			c.Redirect(http.StatusFound, "/?tab="+lastTab+"&msg=quota_err")
 			return
 		}
 
@@ -806,7 +1288,8 @@ func main() {
 			s.SetString("quota_spot", "")
 			s.SetString("quota_on_name", "")
 			s.SetString("quota_sp_name", "")
-			c.Redirect(http.StatusFound, "/?tab=quota&msg=quota_err")
+			lastTab := s.GetString("last_tab", "create")
+			c.Redirect(http.StatusFound, "/?tab="+lastTab+"&msg=quota_err")
 			return
 		}
 
@@ -814,11 +1297,21 @@ func main() {
 		s.SetString("quota_spot", spotVal)
 		s.SetString("quota_on_name", onName)
 		s.SetString("quota_sp_name", spotName)
+		if err := appStore.UpdateKeyQuota(c.Request.Context(), userID, activeKey.ID, region, onVal, spotVal, onName, spotName); err != nil {
+			lastTab := s.GetString("last_tab", "create")
+			c.Redirect(http.StatusFound, "/?tab="+lastTab+"&msg=quota_err")
+			return
+		}
 
-		c.Redirect(http.StatusFound, "/?tab=quota&msg=quota_ok")
+		lastTab := s.GetString("last_tab", "create")
+		c.Redirect(http.StatusFound, "/?tab="+lastTab+"&msg=quota_ok")
 	})
 
-	_ = r.Run(":" + strconv.Itoa(port))
+	addr := ":" + strconv.Itoa(port)
+	log.Printf("AutoSail listening on %s", addr)
+	if err := r.Run(addr); err != nil {
+		log.Fatalf("failed to start server on %s: %v", addr, err)
+	}
 }
 
 func doManageAction(c *gin.Context, action string, fn func(ctx *gin.Context, cli aws.LightsailAPI, name string) error) {
@@ -866,8 +1359,56 @@ func doManageAction(c *gin.Context, action string, fn func(ctx *gin.Context, cli
 	c.Redirect(http.StatusFound, "/?tab=manage&region="+region+"&msg="+action+"_ok")
 }
 
+func doManageActionEC2(c *gin.Context, action string, fn func(ctx *gin.Context, cli *ec2.Client, id string) error) {
+	s := session.Must(c)
+	userID, _ := userIDFromSession(s)
+	keys, _ := appStore.ListKeys(c.Request.Context(), userID)
+	activeKey, _ := resolveActiveKey(s, keys)
+	if activeKey == nil {
+		c.Redirect(http.StatusFound, "/?tab=manage&msg=needuse&service=ec2")
+		return
+	}
+	ak := strings.TrimSpace(activeKey.AccessKey)
+	sk := strings.TrimSpace(activeKey.SecretKey)
+	proxy := strings.TrimSpace(activeKey.Proxy)
+
+	region := normalizeRegion(strings.TrimSpace(c.PostForm("region")))
+	if region == "" {
+		region = normalizeRegion(s.GetString("region", "us-east-1"))
+	}
+	id := strings.TrimSpace(c.PostForm("instance"))
+	if id == "" {
+		c.Redirect(http.StatusFound, "/?tab=manage&region="+region+"&service=ec2")
+		return
+	}
+	if ak == "" || sk == "" {
+		c.Redirect(http.StatusFound, "/?tab=manage&region="+region+"&service=ec2")
+		return
+	}
+
+	cli, err := aws.NewEC2Client(c.Request.Context(), region, ak, sk, proxy)
+	if err != nil {
+		c.Redirect(http.StatusFound, "/?tab=manage&region="+region+"&msg=err_client&service=ec2")
+		return
+	}
+
+	if err := fn(c, cli, id); err != nil {
+		c.Redirect(http.StatusFound, "/?tab=manage&region="+region+"&msg="+action+"_failed&service=ec2")
+		return
+	}
+
+	key := strings.Join([]string{"ec2inst", region, ak, proxy}, "|")
+	instCache.Delete(key)
+
+	c.Redirect(http.StatusFound, "/?tab=manage&region="+region+"&msg="+action+"_ok&service=ec2")
+}
+
 func isLoggedIn(s *session.Session) bool {
 	return strings.TrimSpace(s.GetString("user_id", "")) != ""
+}
+
+func isAdminSession(s *session.Session) bool {
+	return strings.TrimSpace(s.GetString("is_admin", "")) == "1"
 }
 
 func userIDFromSession(s *session.Session) (int64, bool) {
@@ -912,6 +1453,19 @@ func resolvePendingKeyID(s *session.Session, keys []store.Key, activeKey *store.
 		return activeKey.ID
 	}
 	return 0
+}
+
+func findOptionName(options []Option, id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ""
+	}
+	for _, opt := range options {
+		if opt.ID == id {
+			return opt.Name
+		}
+	}
+	return ""
 }
 
 func keyExists(keys []store.Key, keyID int64) bool {

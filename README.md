@@ -22,8 +22,8 @@ go version
 ## 二、下载项目
 
 ```bash
-git clone https://github.com/cloudquota/aws-lightsail-go.git
-cd aws-lightsail-go
+git clone https://github.com/cloudquota/AWS-AutoSail.git
+cd AWS-AutoSail
 ```
 
 ---

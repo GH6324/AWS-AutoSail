@@ -1,4 +1,4 @@
-基于 Go 编写的 AWS Lightsail 管理服务示例项目。
+基于 Go 编写的 AWS EC2 Lightsail 管理服务示例项目。
 
 ---
 

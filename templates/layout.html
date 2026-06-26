@@ -1,602 +1,1147 @@
 {{define "layout"}}
 <!doctype html>
-<html lang="zh-CN" class="h-full">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{.Title}}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <title>AWS 工具站</title>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
   <style>
-    body { font-family: 'Inter', sans-serif; }
-    .no-scrollbar::-webkit-scrollbar { display: none; }
-    .no-scrollbar { -ms-overflow-style: none;  scrollbar-width: none; }
-    html { scroll-behavior: smooth; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-    .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
-    
-    /* 玻璃拟态与背景 */
-    .glass-nav {
-      background: rgba(255, 255, 255, 0.8);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+    :root {
+      /* Google Cloud Blue palette */
+      --gc-blue:        #1a73e8;
+      --gc-blue-dark:   #1557b0;
+      --gc-blue-light:  #e8f0fe;
+      --gc-blue-hover:  #1967d2;
+      /* Surface / background */
+      --gc-bg:          #f8f9fa;
+      --gc-surface:     #ffffff;
+      --gc-border:      #dadce0;
+      --gc-border-soft: #e8eaed;
+      /* Text */
+      --gc-text-primary:   #202124;
+      --gc-text-secondary: #5f6368;
+      --gc-text-hint:      #80868b;
+      --gc-text-link:      #1a73e8;
+      /* Semantic */
+      --gc-green:       #34a853;
+      --gc-green-light: #e6f4ea;
+      --gc-red:         #d93025;
+      --gc-red-light:   #fce8e6;
+      --gc-yellow:      #f9ab00;
+      --gc-yellow-light:#fef7e0;
+      --gc-purple:      #7b1fa2;
+      /* Layout */
+      --nav-height:     64px;
+      --sidebar-width:  256px;
+      --sidebar-collapsed: 64px;
+
+      /* ── Backward-compat: map old --berry-* vars → GC tokens ──
+         index.html CSS still references these; map them here so
+         nothing breaks without touching index.html at all.        */
+      --berry-primary-main:    #1a73e8;
+      --berry-primary-light:   #e8f0fe;
+      --berry-primary-dark:    #1557b0;
+      --berry-primary-200:     #a8c7fa;
+      --berry-primary-800:     #1246a5;
+      --berry-secondary-main:  #34a853;
+      --berry-secondary-dark:  #2d9249;
+      --berry-secondary-200:   #a8d5b5;
+      --berry-secondary-800:   #1a6632;
+      --berry-paper:           #ffffff;
+      --berry-bg:              #f8f9fa;
+      --berry-dark-main:       #202124;
+      --berry-dark-light:      #5f6368;
+      --berry-dark-800:        #131416;
+      --berry-grey50:          #fafafa;
+      --berry-grey100:         #f1f3f4;
+      --berry-grey200:         #dadce0;
+      --berry-grey300:         #bdc1c6;
+      --berry-grey500:         #80868b;
+      --berry-grey700:         #5f6368;
+      --berry-grey900:         #202124;
+      --berry-success-light:   #e6f4ea;
+      --berry-success-main:    #34a853;
+      --berry-success-dark:    #2d9249;
+      --berry-error-light:     #fce8e6;
+      --berry-error-main:      #d93025;
+      --berry-error-dark:      #b31412;
+      --berry-warning-light:   #fef7e0;
+      --berry-warning-main:    #f9ab00;
+      --berry-warning-dark:    #e37400;
+      --berry-info-light:      #e8f0fe;
+      --berry-info-main:       #1a73e8;
+      --berry-orange-main:     #f9ab00;
+      --berry-orange-dark:     #e37400;
+    }
+
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Roboto', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--gc-bg);
+      color: var(--gc-text-primary);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ============================================================
+       TOP NAVIGATION BAR  (Google Cloud style)
+    ============================================================ */
+    .gc-navbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: var(--nav-height);
+      background: var(--gc-surface);
+      border-bottom: 1px solid var(--gc-border);
+      display: flex;
+      align-items: center;
+      gap: 0;
+      z-index: 200;
+      box-shadow: 0 1px 2px rgba(60,64,67,0.1), 0 2px 6px rgba(60,64,67,0.05);
+    }
+    .gc-navbar__logo {
+      width: var(--sidebar-width);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 20px;
+      border-right: 1px solid var(--gc-border-soft);
+      height: 100%;
+    }
+    .gc-navbar__logo .logo-mark {
+      width: 32px; height: 32px;
+      background: var(--gc-blue);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      flex-shrink: 0;
+    }
+    .gc-navbar__logo .logo-text {
+      font-family: 'Google Sans', 'Roboto', sans-serif;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--gc-text-primary);
+      line-height: 1.3;
+    }
+    .gc-navbar__logo .logo-text small {
+      display: block;
+      font-size: 11px;
+      color: var(--gc-text-secondary);
+      font-weight: 400;
+    }
+
+    .gc-navbar__center {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 8px;
+    }
+    .gc-breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 14px;
+      color: var(--gc-text-secondary);
+    }
+    .gc-breadcrumb a {
+      color: var(--gc-text-secondary);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    .gc-breadcrumb a:hover { color: var(--gc-blue); }
+    .gc-breadcrumb .sep {
+      color: var(--gc-border);
+      font-size: 18px;
+      margin: 0 2px;
+      user-select: none;
+    }
+    .gc-breadcrumb .current {
+      color: var(--gc-text-primary);
+      font-weight: 500;
+    }
+
+    .gc-navbar__right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 16px;
+      flex-shrink: 0;
+    }
+    .gc-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 16px;
+      border: 1px solid var(--gc-border);
+      background: var(--gc-surface);
+      color: var(--gc-text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .gc-chip:hover { background: var(--gc-bg); }
+    .gc-chip .material-icons-round { font-size: 15px; color: var(--gc-blue); }
+    .gc-chip--blue {
+      background: var(--gc-blue-light);
+      border-color: #c5d9fb;
+      color: var(--gc-blue-dark);
+    }
+    .gc-chip--blue .material-icons-round { color: var(--gc-blue); }
+
+    /* hamburger for mobile */
+    .gc-menu-btn {
+      display: none;
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--gc-text-secondary);
+      transition: background 0.15s;
+      margin-right: 4px;
+    }
+    .gc-menu-btn:hover { background: var(--gc-bg); }
+    .gc-menu-btn .material-icons-round { font-size: 22px; }
+
+    /* ============================================================
+       LEFT SIDEBAR  (Google Cloud style - white, clean)
+    ============================================================ */
+    .gc-sidebar {
+      position: fixed;
+      top: var(--nav-height);
+      left: 0;
+      bottom: 0;
+      width: var(--sidebar-width);
+      background: var(--gc-surface);
+      border-right: 1px solid var(--gc-border);
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+      transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+      overflow-y: auto;
+    }
+    .gc-sidebar__section-title {
+      padding: 16px 16px 6px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--gc-text-hint);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+    .gc-sidebar__nav { padding: 8px 0; flex: 1; }
+    .gc-sidebar__nav a {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      margin: 1px 8px;
+      border-radius: 4px;
+      color: var(--gc-text-primary);
+      text-decoration: none;
+      font-size: 13.5px;
+      font-weight: 400;
+      transition: background 0.15s;
+      position: relative;
+      overflow: hidden;
+    }
+    .gc-sidebar__nav a:hover { background: var(--gc-bg); }
+    .gc-sidebar__nav a.active {
+      background: var(--gc-blue-light);
+      color: var(--gc-blue-dark);
+      font-weight: 500;
+    }
+    .gc-sidebar__nav a.active::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 4px; bottom: 4px;
+      width: 3px;
+      background: var(--gc-blue);
+      border-radius: 0 2px 2px 0;
+    }
+    .gc-sidebar__nav a .material-icons-round {
+      font-size: 20px;
+      color: var(--gc-text-secondary);
+      flex-shrink: 0;
+    }
+    .gc-sidebar__nav a.active .material-icons-round { color: var(--gc-blue); }
+    .gc-sidebar__nav a:hover .material-icons-round { color: var(--gc-blue); }
+
+    .gc-sidebar__bottom {
+      padding: 12px 8px;
+      border-top: 1px solid var(--gc-border-soft);
+    }
+    .gc-user-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      border-radius: 4px;
+      background: var(--gc-bg);
+      margin-bottom: 8px;
+    }
+    .gc-avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: var(--gc-blue);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .gc-user-name { font-size: 13px; font-weight: 500; color: var(--gc-text-primary); }
+    .gc-user-role { font-size: 11px; color: var(--gc-text-secondary); }
+
+    .gc-logout-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 9px 12px;
+      border-radius: 4px;
+      border: 1px solid var(--gc-border);
+      background: var(--gc-surface);
+      color: var(--gc-text-secondary);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: 'Roboto', sans-serif;
+    }
+    .gc-logout-btn:hover {
+      background: var(--gc-red-light);
+      color: var(--gc-red);
+      border-color: rgba(217,48,37,0.3);
+    }
+    .gc-logout-btn .material-icons-round { font-size: 17px; }
+
+    /* Overlay for mobile */
+    .gc-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.32);
+      z-index: 99;
+    }
+
+    /* ============================================================
+       MAIN CONTENT AREA
+    ============================================================ */
+    .gc-main {
+      margin-left: var(--sidebar-width);
+      margin-top: var(--nav-height);
+      min-height: calc(100vh - var(--nav-height));
+      padding: 24px 28px 32px;
+      transition: margin-left 0.25s cubic-bezier(0.4,0,0.2,1);
+    }
+
+    /* Page header row */
+    .gc-page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .gc-page-title {
+      font-family: 'Google Sans', 'Roboto', sans-serif;
+      font-size: 22px;
+      font-weight: 400;
+      color: var(--gc-text-primary);
+      line-height: 1.3;
+    }
+
+    /* ============================================================
+       CONTEXT BAR (account selector)
+    ============================================================ */
+    .gc-context-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      background: var(--gc-surface);
+      border: 1px solid var(--gc-border);
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(60,64,67,0.06);
+    }
+    .gc-context-bar__left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+    .gc-context-bar__label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--gc-text-primary);
+      white-space: nowrap;
+    }
+    .gc-context-bar__label .material-icons-round { font-size: 18px; color: var(--gc-blue); }
+    .gc-context-bar__hint {
+      font-size: 12px;
+      color: var(--gc-text-secondary);
+    }
+    .gc-context-form {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      margin: 0;
+    }
+    /* Aliases for context bar */
+    .berry-context-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      background: var(--gc-surface);
+      border: 1px solid var(--gc-border);
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(60,64,67,0.06);
+    }
+    .berry-context-bar__left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+    .berry-context-bar__label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--gc-text-primary); white-space: nowrap; }
+    .berry-context-bar__label .material-icons-round { font-size: 18px; color: var(--gc-blue); }
+    .berry-context-bar__hint { font-size: 12px; color: var(--gc-text-secondary); }
+    .berry-context-form {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      margin: 0;
+      min-width: 0;
+      flex: 1;
+    }
+    .berry-context-form .berry-select-wrapper {
+      min-width: 260px;
+      max-width: 400px;
+      flex: 1;
+    }
+    .berry-context-status { font-size: 12px; color: var(--gc-text-secondary); margin-left: 8px; white-space: nowrap; }
+
+    /* ============================================================
+       FLASH / ALERT BANNERS  (Material style)
+    ============================================================ */
+    .gc-alert {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      border-radius: 4px;
+      font-size: 13.5px;
+      font-weight: 400;
+      margin-bottom: 14px;
+      border-left: 4px solid transparent;
+      animation: gcFadeIn 0.25s ease;
+    }
+    @keyframes gcFadeIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .gc-alert .material-icons-round { font-size: 20px; flex-shrink: 0; }
+    .gc-alert-success {
+      background: var(--gc-green-light);
+      color: #1e7e34;
+      border-left-color: var(--gc-green);
+    }
+    .gc-alert-success .material-icons-round { color: var(--gc-green); }
+    .gc-alert-error {
+      background: var(--gc-red-light);
+      color: var(--gc-red);
+      border-left-color: var(--gc-red);
+    }
+    .gc-alert-warning {
+      background: var(--gc-yellow-light);
+      color: #b06000;
+      border-left-color: var(--gc-yellow);
+    }
+    .gc-alert-warning .material-icons-round { color: var(--gc-yellow); }
+    .gc-alert-info {
+      background: var(--gc-blue-light);
+      color: var(--gc-blue-dark);
+      border-left-color: var(--gc-blue);
+    }
+    .gc-alert-info .material-icons-round { color: var(--gc-blue); }
+
+    /* ============================================================
+       CARDS
+    ============================================================ */
+    .gc-card {
+      background: var(--gc-surface);
+      border: 1px solid var(--gc-border);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(60,64,67,0.08), 0 2px 6px rgba(60,64,67,0.04);
+    }
+    .gc-card-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--gc-border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .gc-card-header__left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .gc-icon-box {
+      width: 36px; height: 36px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+    .gc-icon-blue   { background: var(--gc-blue-light); color: var(--gc-blue); }
+    .gc-icon-green  { background: var(--gc-green-light); color: var(--gc-green); }
+    .gc-icon-red    { background: var(--gc-red-light); color: var(--gc-red); }
+    .gc-icon-yellow { background: var(--gc-yellow-light); color: #b06000; }
+    .gc-icon-grey   { background: var(--gc-bg); color: var(--gc-text-secondary); }
+    .gc-icon-purple { background: #f3e8fd; color: var(--gc-purple); }
+
+    .gc-card-header h3 {
+      font-family: 'Google Sans', 'Roboto', sans-serif;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--gc-text-primary);
+    }
+    .gc-card-header .subtitle {
+      font-size: 12px;
+      color: var(--gc-text-secondary);
+      margin-top: 1px;
+    }
+    .gc-card-body { padding: 20px; }
+
+    /* ============================================================
+       STAT CARDS
+    ============================================================ */
+    .gc-stat-card {
+      background: var(--gc-surface);
+      border: 1px solid var(--gc-border);
+      border-radius: 8px;
+      padding: 20px 24px;
+      box-shadow: 0 1px 2px rgba(60,64,67,0.06);
+      transition: box-shadow 0.2s;
+    }
+    .gc-stat-card:hover {
+      box-shadow: 0 2px 6px rgba(60,64,67,0.12);
+    }
+    .gc-stat-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--gc-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    .gc-stat-value {
+      font-family: 'Google Sans', 'Roboto', sans-serif;
+      font-size: 30px;
+      font-weight: 400;
+      color: var(--gc-text-primary);
+      line-height: 1.2;
+    }
+    .gc-stat-detail {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--gc-border-soft);
+      font-size: 11px;
+      color: var(--gc-text-secondary);
+      font-family: 'Roboto Mono', monospace;
+      word-break: break-all;
+    }
+
+    /* ============================================================
+       FORM ELEMENTS
+    ============================================================ */
+    .gc-form-group { margin-bottom: 16px; }
+    .gc-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--gc-text-secondary);
+      margin-bottom: 5px;
+    }
+    .gc-input {
+      width: 100%;
+      min-height: 40px;
+      padding: 9px 12px;
+      border-radius: 4px;
+      border: 1px solid var(--gc-border);
+      background: var(--gc-surface);
+      color: var(--gc-text-primary);
+      font-size: 14px;
+      font-family: 'Roboto', 'PingFang SC', sans-serif;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      outline: none;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    .gc-select {
+      width: 100%;
+      min-height: 40px;
+      padding: 9px 32px 9px 12px;
+      border-radius: 4px;
+      border: 1px solid var(--gc-border);
+      background: var(--gc-surface);
+      color: var(--gc-text-primary);
+      font-size: 14px;
+      font-family: 'Roboto', 'PingFang SC', sans-serif;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      outline: none;
+      -webkit-appearance: none;
+      appearance: none;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .gc-input:hover, .gc-select:hover { border-color: #80868b; }
+    .gc-input:focus, .gc-select:focus {
+      border-color: var(--gc-blue);
+      box-shadow: 0 0 0 2px rgba(26,115,232,0.18);
+    }
+    .gc-input::placeholder { color: var(--gc-text-hint); }
+    .gc-input-hint {
+      font-size: 11px;
+      color: var(--gc-text-hint);
+      margin-top: 4px;
+    }
+    .gc-select-wrap { position: relative; }
+    .gc-select-wrap::after {
+      content: '\e5cf';
+      font-family: 'Material Icons Round';
+      position: absolute;
+      right: 10px; top: 50%;
+      transform: translateY(-50%);
+      color: var(--gc-text-secondary);
+      pointer-events: none;
+      font-size: 18px;
+    }
+
+    /* Aliases for backward compat with index.html class names */
+    .berry-input-group { margin-bottom: 16px; }
+    .berry-label       { display: block; font-size: 12px; font-weight: 500; color: var(--gc-text-secondary); margin-bottom: 5px; }
+    .berry-input       { width: 100%; min-height: 40px; padding: 9px 12px; border-radius: 4px; border: 1px solid var(--gc-border); background: var(--gc-surface); color: var(--gc-text-primary); font-size: 14px; font-family: 'Roboto','PingFang SC',sans-serif; transition: border-color .15s,box-shadow .15s; outline: none; -webkit-appearance: none; appearance: none; }
+    .berry-select      { width: 100%; min-height: 40px; padding: 9px 32px 9px 12px; border-radius: 4px; border: 1px solid var(--gc-border); background: var(--gc-surface); color: var(--gc-text-primary); font-size: 14px; font-family: 'Roboto','PingFang SC',sans-serif; transition: border-color .15s,box-shadow .15s; outline: none; -webkit-appearance: none; appearance: none; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+    .berry-input:hover, .berry-select:hover { border-color: #80868b; }
+    .berry-input:focus, .berry-select:focus { border-color: var(--gc-blue); box-shadow: 0 0 0 2px rgba(26,115,232,.18); }
+    .berry-input::placeholder { color: var(--gc-text-hint); }
+    .berry-input-hint  { font-size: 11px; color: var(--gc-text-hint); margin-top: 4px; }
+    .berry-select-wrapper { position: relative; }
+    .berry-select-wrapper::after { content: '\e5cf'; font-family: 'Material Icons Round'; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--gc-text-secondary); pointer-events: none; font-size: 18px; }
+
+    /* ============================================================
+       BUTTONS  (Material / GCloud style)
+    ============================================================ */
+    .gc-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 36px;
+      padding: 7px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      font-family: 'Google Sans', 'Roboto', sans-serif;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 0.15s, box-shadow 0.15s;
+      text-decoration: none;
+      letter-spacing: 0.15px;
+      line-height: 1.6;
+      white-space: nowrap;
+    }
+    .gc-btn:active { opacity: 0.85; }
+    .gc-btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+
+    .gc-btn-primary {
+      background: var(--gc-blue);
+      color: #fff;
+      border-color: var(--gc-blue);
+      box-shadow: 0 1px 2px rgba(60,64,67,0.2);
+    }
+    .gc-btn-primary:hover { background: var(--gc-blue-hover); box-shadow: 0 2px 6px rgba(26,115,232,0.3); }
+
+    .gc-btn-outlined {
+      background: var(--gc-surface);
+      color: var(--gc-blue);
+      border-color: var(--gc-border);
+    }
+    .gc-btn-outlined:hover { background: var(--gc-blue-light); border-color: #c5d9fb; }
+
+    .gc-btn-danger {
+      background: var(--gc-surface);
+      color: var(--gc-red);
+      border-color: var(--gc-border);
+    }
+    .gc-btn-danger:hover { background: var(--gc-red-light); border-color: rgba(217,48,37,0.3); }
+
+    .gc-btn-success {
+      background: var(--gc-green);
+      color: #fff;
+      border-color: var(--gc-green);
+      box-shadow: 0 1px 2px rgba(60,64,67,0.15);
+    }
+    .gc-btn-success:hover { background: #2d9249; }
+
+    .gc-btn-text {
+      background: transparent;
+      color: var(--gc-blue);
+      border-color: transparent;
+    }
+    .gc-btn-text:hover { background: var(--gc-blue-light); }
+
+    .gc-btn-sm { min-height: 30px; padding: 4px 12px; font-size: 12px; }
+    .gc-btn-block { width: 100%; }
+
+    /* Aliases for index.html */
+    .berry-btn            { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:36px; padding:7px 16px; border-radius:4px; font-size:13px; font-weight:500; font-family:'Google Sans','Roboto',sans-serif; cursor:pointer; border:1px solid transparent; transition:background .15s,box-shadow .15s; text-decoration:none; letter-spacing:.15px; line-height:1.6; white-space:nowrap; }
+    .berry-btn:active     { opacity:.85; }
+    .berry-btn:disabled   { opacity:.5; cursor:not-allowed; pointer-events:none; }
+    .berry-btn-primary    { background:var(--gc-blue); color:#fff; border-color:var(--gc-blue); box-shadow:0 1px 2px rgba(60,64,67,.2); }
+    .berry-btn-primary:hover { background:var(--gc-blue-hover); }
+    .berry-btn-secondary  { background:var(--gc-green); color:#fff; border-color:var(--gc-green); }
+    .berry-btn-secondary:hover { background:#2d9249; }
+    .berry-btn-success    { background:var(--gc-green); color:#fff; border-color:var(--gc-green); }
+    .berry-btn-success:hover { background:#2d9249; }
+    .berry-btn-error      { background:var(--gc-surface); color:var(--gc-red); border-color:var(--gc-border); }
+    .berry-btn-error:hover { background:var(--gc-red-light); }
+    .berry-btn-outlined   { background:var(--gc-surface); color:var(--gc-blue); border-color:var(--gc-border); }
+    .berry-btn-outlined:hover { background:var(--gc-blue-light); }
+    .berry-btn-warn-outlined { background:var(--gc-surface); color:#b06000; border-color:var(--gc-border); }
+    .berry-btn-warn-outlined:hover { background:var(--gc-yellow-light); }
+    .berry-btn-blue       { background:var(--gc-blue); color:#fff; border-color:var(--gc-blue); }
+    .berry-btn-blue:hover { background:var(--gc-blue-hover); }
+    .berry-btn-sm         { min-height:30px; padding:4px 12px; font-size:12px; }
+    .berry-btn-block      { width:100%; }
+
+    /* ============================================================
+       BADGES / STATUS CHIPS
+    ============================================================ */
+    .gc-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 11.5px;
+      font-weight: 500;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+    .gc-badge .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+    .gc-badge-success { background: var(--gc-green-light); color: #1e7e34; border-color: rgba(52,168,83,0.25); }
+    .gc-badge-error   { background: var(--gc-red-light); color: var(--gc-red); border-color: rgba(217,48,37,0.25); }
+    .gc-badge-warn    { background: var(--gc-yellow-light); color: #b06000; border-color: rgba(249,171,0,0.3); }
+    .gc-badge-blue    { background: var(--gc-blue-light); color: var(--gc-blue-dark); border-color: rgba(26,115,232,0.25); }
+    .gc-badge-grey    { background: var(--gc-bg); color: var(--gc-text-secondary); border-color: var(--gc-border); }
+    .gc-badge-purple  { background: #f3e8fd; color: var(--gc-purple); border-color: rgba(123,31,162,0.2); }
+
+    /* Aliases */
+    .berry-badge         { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:12px; font-size:11.5px; font-weight:500; border:1px solid transparent; white-space:nowrap; }
+    .berry-badge .dot    { width:6px; height:6px; border-radius:50%; display:inline-block; }
+    .berry-badge-success { background:var(--gc-green-light); color:#1e7e34; border-color:rgba(52,168,83,.25); }
+    .berry-badge-error   { background:var(--gc-red-light); color:var(--gc-red); border-color:rgba(217,48,37,.25); }
+    .berry-badge-orange  { background:var(--gc-yellow-light); color:#b06000; border-color:rgba(249,171,0,.3); }
+    .berry-badge-blue    { background:var(--gc-blue-light); color:var(--gc-blue-dark); border-color:rgba(26,115,232,.25); }
+    .berry-badge-grey    { background:var(--gc-bg); color:var(--gc-text-secondary); border-color:var(--gc-border); }
+    .berry-badge-purple  { background:#f3e8fd; color:var(--gc-purple); border-color:rgba(123,31,162,.2); }
+
+    /* ============================================================
+       GRID / LAYOUT HELPERS
+    ============================================================ */
+    .gc-row  { display: flex; flex-wrap: wrap; gap: 16px; }
+    .gc-col-6  { flex: 0 0 calc(50% - 8px); max-width: calc(50% - 8px); }
+    .gc-col-12 { flex: 0 0 100%; max-width: 100%; }
+
+    /* Aliases */
+    .berry-row   { display:flex; flex-wrap:wrap; gap:16px; }
+    .berry-col-6 { flex:0 0 calc(50% - 8px); max-width:calc(50% - 8px); }
+    .berry-col-12 { flex:0 0 100%; max-width:100%; }
+
+    /* ============================================================
+       LIST ITEM
+    ============================================================ */
+    .gc-list-item {
+      padding: 14px 18px;
+      border: 1px solid var(--gc-border);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 10px;
+      background: var(--gc-surface);
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+    .gc-list-item:hover { background: var(--gc-bg); box-shadow: 0 1px 3px rgba(60,64,67,0.08); }
+
+    /* Alias */
+    .berry-list-item { padding:14px 18px; border:1px solid var(--gc-border); border-radius:6px; display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:10px; background:var(--gc-surface); transition:background .15s; }
+    .berry-list-item:hover { background:var(--gc-bg); }
+
+    /* ============================================================
+       EMPTY STATE
+    ============================================================ */
+    .gc-empty {
+      text-align: center;
+      padding: 40px 20px;
+      border: 1px dashed var(--gc-border);
+      border-radius: 8px;
+      background: var(--gc-bg);
+    }
+    .gc-empty .material-icons-round { font-size: 48px; color: var(--gc-border); margin-bottom: 8px; display: block; }
+    .gc-empty p { color: var(--gc-text-secondary); font-size: 14px; }
+
+    /* Alias */
+    .berry-empty { text-align:center; padding:40px 20px; border:1px dashed var(--gc-border); border-radius:8px; background:var(--gc-bg); }
+    .berry-empty .material-icons-round { font-size:48px; color:var(--gc-border); margin-bottom:8px; display:block; }
+    .berry-empty p { color:var(--gc-text-secondary); font-size:14px; }
+
+    /* ============================================================
+       DATA TABLE
+    ============================================================ */
+    .gc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .gc-table th {
+      padding: 10px 16px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--gc-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      border-bottom: 1px solid var(--gc-border);
+      background: var(--gc-bg);
+    }
+    .gc-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--gc-border-soft);
+      color: var(--gc-text-primary);
+      vertical-align: middle;
+    }
+    .gc-table tr:last-child td { border-bottom: none; }
+    .gc-table tr:hover td { background: var(--gc-bg); }
+
+    /* ============================================================
+       DIVIDER / FOOTER / MISC
+    ============================================================ */
+    .gc-divider { height: 1px; background: var(--gc-border-soft); margin: 16px 0; border: none; }
+    .berry-divider { height:1px; background:var(--gc-border-soft); margin:16px 0; border:none; }
+
+    .gc-footer { text-align: center; padding: 20px 0 8px; color: var(--gc-text-hint); font-size: 12px; }
+    .berry-footer { text-align:center; padding:20px 0 8px; color:var(--gc-text-hint); font-size:12px; }
+
+    /* Section / spacing helpers used by index.html */
+    .berry-section + .berry-section { margin-top: 20px; }
+    .berry-mb-4  { margin-bottom: 16px; }
+    .berry-mb-6  { margin-bottom: 24px; }
+    .berry-mt-4  { margin-top: 16px; }
+    .berry-gap-3 { gap: 12px; }
+    .berry-gap-4 { gap: 16px; }
+    .flex              { display: flex; }
+    .flex-wrap         { flex-wrap: wrap; }
+    .items-center      { align-items: center; }
+    .items-end         { align-items: flex-end; }
+    .justify-between   { justify-content: space-between; }
+    .flex-1            { flex: 1; min-width: 0; }
+    .w-full            { width: 100%; }
+    .text-center       { text-align: center; }
+    .font-mono         { font-family: 'Roboto Mono', monospace; }
+    .text-xs           { font-size: 12px; }
+    .text-sm           { font-size: 14px; }
+    .shrink-0          { flex-shrink: 0; }
+
+    /* Legacy aliases: berry-card → gc-card style */
+    .berry-card         { background:var(--gc-surface); border:1px solid var(--gc-border); border-radius:8px; overflow:hidden; box-shadow:0 1px 2px rgba(60,64,67,.08),0 2px 6px rgba(60,64,67,.04); }
+    .berry-card-header  { padding:16px 20px; border-bottom:1px solid var(--gc-border-soft); display:flex; align-items:center; justify-content:space-between; gap:12px; background:var(--gc-surface); }
+    .berry-card-header-left { display:flex; align-items:center; gap:12px; }
+    .berry-card-header h3 { font-family:'Google Sans','Roboto',sans-serif; font-size:15px; font-weight:500; color:var(--gc-text-primary); }
+    .berry-card-header .subtitle { font-size:12px; color:var(--gc-text-secondary); margin-top:1px; }
+    .berry-card-body    { padding:20px; }
+    .berry-card .icon-box, .berry-card-header .icon-box { width:36px; height:36px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
+    .icon-box-purple { background:var(--gc-blue-light); color:var(--gc-blue); }
+    .icon-box-teal   { background:var(--gc-green-light); color:var(--gc-green); }
+    .icon-box-orange { background:var(--gc-yellow-light); color:#b06000; }
+    .icon-box-blue   { background:var(--gc-blue-light); color:var(--gc-blue); }
+    .icon-box-green  { background:var(--gc-green-light); color:var(--gc-green); }
+    .icon-box-red    { background:var(--gc-red-light); color:var(--gc-red); }
+
+    .berry-stat-card { background:var(--gc-surface); border:1px solid var(--gc-border); border-radius:8px; padding:20px 24px; box-shadow:0 1px 2px rgba(60,64,67,.06); transition:box-shadow .2s; }
+    .berry-stat-card:hover { box-shadow:0 2px 6px rgba(60,64,67,.12); }
+    .berry-stat-card .stat-bg-icon { display:none; }
+    .berry-stat-card .stat-label { font-size:12px; font-weight:500; color:var(--gc-text-secondary); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
+    .berry-stat-card .stat-value  { font-family:'Google Sans','Roboto',sans-serif; font-size:30px; font-weight:400; color:var(--gc-text-primary); line-height:1.2; }
+    .berry-stat-card .stat-detail { margin-top:12px; padding-top:10px; border-top:1px solid var(--gc-border-soft); font-size:11px; color:var(--gc-text-secondary); font-family:'Roboto Mono',monospace; word-break:break-all; }
+
+
+    /* Top chip alias */
+    .berry-top-chip { display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:16px; border:1px solid var(--gc-border); background:var(--gc-surface); color:var(--gc-text-secondary); font-size:12px; font-weight:500; white-space:nowrap; }
+    .berry-top-chip .material-icons-round { font-size:15px; color:var(--gc-blue); }
+
+    /* Alert aliases */
+    .berry-alert         { display:flex; align-items:center; gap:10px; padding:12px 16px; border-radius:4px; font-size:13.5px; margin-bottom:14px; border-left:4px solid transparent; animation:gcFadeIn .25s ease; }
+    .berry-alert .material-icons-round { font-size:20px; flex-shrink:0; }
+    .berry-alert-success { background:var(--gc-green-light); color:#1e7e34; border-left-color:var(--gc-green); }
+    .berry-alert-error   { background:var(--gc-red-light); color:var(--gc-red); border-left-color:var(--gc-red); }
+    .berry-alert-warning { background:var(--gc-yellow-light); color:#b06000; border-left-color:var(--gc-yellow); }
+    .berry-alert-info    { background:var(--gc-blue-light); color:var(--gc-blue-dark); border-left-color:var(--gc-blue); }
+
+    /* Animation alias */
+    @keyframes berryFadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .berry-animate { animation: berryFadeIn 0.3s ease-out; }
+
+    /* ============================================================
+       COMPONENT STYLES  (not modal – index.html owns .aws-modal)
+    ============================================================ */
+    /* Special region list (used in region activation modal) */
+    /* Newbie SSE console */
+    .newbie-console { background:#1e2124; color:#e8eaed; border-radius:6px; padding:14px 16px; font-family:'Roboto Mono',monospace; font-size:12px; min-height:180px; max-height:360px; overflow-y:auto; line-height:1.7; margin-top:8px; border:1px solid #3c4043; }
+
+    /* ============================================================
+       RESPONSIVE
+    ============================================================ */
+    @media (max-width: 960px) {
+      .gc-sidebar { transform: translateX(-100%); }
+      .gc-sidebar.open { transform: translateX(0); }
+      .gc-overlay.visible { display: block; }
+      .gc-main { margin-left: 0; padding: 16px; }
+      .gc-navbar__logo { width: auto; padding: 0 14px; border-right: none; }
+      .gc-menu-btn { display: flex; }
+      .gc-navbar__right .gc-chip { display: none; }
+      .berry-col-6 { flex: 0 0 100%; max-width: 100%; }
+      .gc-col-6    { flex: 0 0 100%; max-width: 100%; }
+      .berry-context-bar { flex-direction: column; align-items: stretch; }
+      .berry-context-form { justify-content: stretch; }
+      .berry-context-form .berry-select-wrapper { min-width: 0; width: 100%; }
     }
   </style>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            primary: { 50: '#eef2ff', 100: '#e0e7ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 900: '#312e81' },
-            slate: { 850: '#1e293b' }
-          },
-          boxShadow: {
-            'soft': '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
-            'card': '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
-            'glow': '0 0 15px rgba(99, 102, 241, 0.15)'
-          }
-        }
-      }
-    }
-  </script>
 </head>
 
-<body class="min-h-full bg-slate-50 text-slate-800 antialiased selection:bg-indigo-100 selection:text-indigo-900 pb-20">
+<body>
+  <!-- Mobile overlay -->
+  <div class="gc-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
-  <div class="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-    <div class="absolute -top-[20%] -left-[10%] h-[600px] w-[600px] rounded-full bg-indigo-100/50 blur-[100px]"></div>
-    <div class="absolute top-[10%] right-[0%] h-[500px] w-[500px] rounded-full bg-purple-100/40 blur-[100px]"></div>
-  </div>
+  <!-- ===== TOP NAVBAR ===== -->
+  <header class="gc-navbar">
+    <div class="gc-navbar__logo">
+      <button class="gc-menu-btn" onclick="toggleSidebar()" aria-label="菜单">
+        <span class="material-icons-round">menu</span>
+      </button>
+      <div class="logo-mark">A</div>
+      <div class="logo-text">
+        AWS 控制台
+        <small>Multi-Service Console</small>
+      </div>
+    </div>
 
-  <header class="sticky top-0 z-40 w-full border-b border-slate-200/60 glass-nav">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex h-16 items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div class="bg-indigo-600 text-white p-1.5 rounded-lg shadow-sm">
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-          </div>
-          <h1 class="text-lg font-bold tracking-tight text-slate-900 hidden sm:block">
-            {{.Title}}
-          </h1>
+    <div class="gc-navbar__center">
+      <nav class="gc-breadcrumb">
+        <a href="/">控制台</a>
+        <span class="sep">/</span>
+        <span class="current">
+          {{if eq .Tab "settings"}}系统设置{{else if eq .Tab "awsaccount"}}AWS 账户{{else if eq .Tab "create"}}创建实例{{else if eq .Tab "manage"}}实例管理{{else}}概览{{end}}
+        </span>
+      </nav>
+    </div>
+
+    <div class="gc-navbar__right">
+      {{if .Region}}
+        <div class="gc-chip">
+          <span class="material-icons-round">public</span>
+          {{.Region}}
         </div>
-
-        <div class="flex items-center gap-4">
-          {{if .Username}}
-            <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100/50 border border-slate-200/60">
-              <span class="inline-flex items-center justify-center h-5 w-5 rounded-full bg-indigo-100 text-[10px] font-bold text-indigo-700">
-                {{slice .Username 0 1}}
-              </span>
-              <p class="text-xs text-slate-600 font-bold pr-1">{{.Username}}</p>
-            </div>
-          {{end}}
-
-          <form method="post" action="/logout">
-            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-            <button class="group flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors">
-              <span>退出</span>
-              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-            </button>
-          </form>
+      {{end}}
+      {{if .ActiveAccount}}
+        <div class="gc-chip gc-chip--blue">
+          <span class="material-icons-round">account_circle</span>
+          {{.ActiveAccount}}
         </div>
+      {{end}}
+      <div class="gc-chip">
+        <span class="material-icons-round">cloud</span>
+        {{if eq .Tab "create"}}{{if eq .CreateService "ec2"}}EC2{{else}}Lightsail{{end}}{{else if eq .Tab "manage"}}{{if eq .ManageService "ec2"}}EC2{{else}}Lightsail{{end}}{{else}}多账号{{end}}
       </div>
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+  <!-- ===== LEFT SIDEBAR ===== -->
+  <aside class="gc-sidebar" id="sidebar">
+    <div class="gc-sidebar__section-title">导航</div>
+    <nav class="gc-sidebar__nav">
+      <a href="/?tab=awsaccount" class="{{if eq .Tab "awsaccount"}}active{{end}}">
+        <span class="material-icons-round">cloud</span>
+        AWS 账户
+      </a>
+      <a href="/?tab=create&service={{.CreateService}}{{if .Region}}&region={{.Region}}{{end}}" class="{{if eq .Tab "create"}}active{{end}}">
+        <span class="material-icons-round">add_circle_outline</span>
+        创建实例
+      </a>
+      <a href="/?tab=manage&service={{.ManageService}}{{if .Region}}&region={{.Region}}{{end}}" class="{{if eq .Tab "manage"}}active{{end}}">
+        <span class="material-icons-round">dns</span>
+        实例管理
+      </a>
+      <a href="/?tab=settings" class="{{if eq .Tab "settings"}}active{{end}}">
+        <span class="material-icons-round">settings</span>
+        系统设置
+      </a>
+    </nav>
 
-    <div id="flash-root" class="fixed right-4 top-20 z-50 w-full max-w-sm space-y-3 animate-fade-in sm:right-6 pointer-events-none">
-      <div class="pointer-events-auto space-y-2">
-      {{if or .Flash.Success .Flash.Error .Flash.Warn .Flash.Info}}
-        {{if .Flash.Success}}
-          <div class="flex items-center gap-3 rounded-xl border border-emerald-100 bg-white/90 backdrop-blur shadow-lg p-4 text-sm font-medium text-emerald-800">
-            <svg class="w-5 h-5 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            {{.Flash.Success}}
-          </div>
-        {{end}}
-        {{if .Flash.Error}}
-          <div class="flex items-center gap-3 rounded-xl border border-rose-100 bg-white/90 backdrop-blur shadow-lg p-4 text-sm font-medium text-rose-800">
-             <svg class="w-5 h-5 text-rose-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-             {{.Flash.Error}}
-          </div>
-        {{end}}
-        {{if .Flash.Warn}}
-          <div class="flex items-center gap-3 rounded-xl border border-amber-100 bg-white/90 backdrop-blur shadow-lg p-4 text-sm font-medium text-amber-800">
-             <svg class="w-5 h-5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-             {{.Flash.Warn}}
-          </div>
-        {{end}}
-        {{if .Flash.Info}}
-          <div class="flex items-center gap-3 rounded-xl border border-blue-100 bg-white/90 backdrop-blur shadow-lg p-4 text-sm font-medium text-blue-700">
-            <svg class="w-5 h-5 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            {{.Flash.Info}}
-          </div>
-        {{end}}
-      {{end}}
-      </div>
-    </div>
-
-    <div class="grid gap-6 lg:grid-cols-2">
-      
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow duration-300 overflow-hidden">
-        <details class="group" role="region">
-          <summary class="flex cursor-pointer select-none items-center justify-between p-5 hover:bg-slate-50 transition-colors">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 ring-1 ring-indigo-100/50">
-                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
-              </div>
-              <div>
-                <h3 class="text-sm font-bold text-slate-900">凭证配置</h3>
-                <p class="text-xs text-slate-500 mt-0.5">Access Key & Secret</p>
-              </div>
-            </div>
-            <span class="text-slate-400 group-open:rotate-180 transition-transform duration-300">
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-            </span>
-          </summary>
-
-          <div class="px-5 pb-6 pt-2 border-t border-slate-100 bg-slate-50/50">
-            <form method="post" action="/auth/save" class="space-y-4 mt-2">
-              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-              <input type="hidden" name="key_id" value="{{.PendingKey}}">
-              
-              <div class="grid gap-4 sm:grid-cols-2">
-                <div class="col-span-2 sm:col-span-1 space-y-1.5">
-                  <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">密钥别名</label>
-                  <input name="key_name" placeholder="如：个人账号"
-                         class="w-full rounded-lg border-slate-200 bg-white px-3 py-2 text-sm font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 outline-none shadow-sm transition placeholder:text-slate-300"
-                         value="{{.KeyName}}">
-                </div>
-                 <div class="col-span-2 sm:col-span-1 space-y-1.5">
-                  <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Access Key</label>
-                  <input name="ak" placeholder="AKIA..."
-                         class="w-full rounded-lg border-slate-200 bg-white px-3 py-2 text-sm font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 outline-none shadow-sm transition placeholder:text-slate-300"
-                         value="{{.AK}}">
-                </div>
-              </div>
-
-              <div class="space-y-1.5">
-                <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Secret Key</label>
-                <input name="sk" placeholder="••••••••" type="password"
-                       class="w-full rounded-lg border-slate-200 bg-white px-3 py-2 text-sm font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 outline-none shadow-sm transition placeholder:text-slate-300">
-              </div>
-
-              <div class="space-y-1.5">
-                <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Proxy (可选)</label>
-                <div class="relative">
-                  <input name="proxy" placeholder="http://user:pass@ip:port"
-                         class="w-full rounded-lg border-slate-200 bg-white pl-3 pr-24 py-2 text-sm font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 outline-none shadow-sm transition placeholder:text-slate-300"
-                         value="{{.Proxy}}">
-                  <button type="button" id="proxyCheckBtn"
-                          class="absolute right-1 top-1 bottom-1 rounded-md bg-slate-100 border border-slate-200 px-3 text-xs font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 transition-colors">
-                    测试
-                  </button>
-                </div>
-              </div>
-
-              <div id="proxyCheckResult" class="hidden text-xs rounded-lg p-3"></div>
-
-              <div class="grid grid-cols-2 gap-3 pt-2">
-                <button name="mode" value="create" class="rounded-lg bg-slate-900 text-white shadow-lg shadow-slate-900/10 py-2.5 text-xs font-bold hover:bg-slate-800 hover:translate-y-px transition-all">
-                  保存为新凭证
-                </button>
-                <button name="mode" value="update" class="rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm py-2.5 text-xs font-bold hover:bg-slate-50 hover:text-indigo-600 transition-colors">
-                  更新当前
-                </button>
-              </div>
-
-              <div class="flex items-center justify-between px-1 pt-1">
-                 <div class="text-[10px] text-slate-400">SK 仅在输入时保存</div>
-                {{if .HasCreds}}
-                  <span class="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 已缓存
-                  </span>
-                {{end}}
-              </div>
-            </form>
-          </div>
-        </details>
-      </div>
-
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow duration-300 overflow-hidden">
-        <details class="group" role="region">
-          <summary class="flex cursor-pointer select-none items-center justify-between p-5 hover:bg-slate-50 transition-colors">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 ring-1 ring-emerald-100/50">
-                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
-              </div>
-              <div>
-                <h3 class="text-sm font-bold text-slate-900">账号列表</h3>
-                <p class="text-xs text-slate-500 mt-0.5">切换多账号 & 配额</p>
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-               {{if .Keys}}
-                <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">{{len .Keys}} 个</span>
-              {{end}}
-              <span class="text-slate-400 group-open:rotate-180 transition-transform duration-300">
-                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-              </span>
-            </div>
-          </summary>
-
-          <div class="px-5 pb-6 pt-2 border-t border-slate-100 bg-slate-50/50">
-            <div class="mt-2">
-              {{if .Keys}}
-                <div class="flex items-center justify-between rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2 mb-3">
-                  <div class="flex items-center gap-2 text-xs text-indigo-900">
-                    <span class="relative flex h-2 w-2">
-                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                      <span class="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
-                    </span>
-                    当前：<span class="font-bold font-mono">{{if .ActiveKey}}{{.ActiveKey}}{{else}}未选择{{end}}</span>
-                  </div>
-                </div>
-                
-                <div class="bg-white rounded-lg border border-slate-200 p-3 mb-3 shadow-sm">
-                  <form method="post" action="/aws/quota" class="space-y-2">
-                    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-                    <div class="flex gap-2">
-                       <div class="relative flex-1">
-                        <select name="quota_region" class="w-full appearance-none rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-semibold text-slate-700 outline-none focus:border-indigo-500 transition">
-                          {{range .QuotaRegions}}
-                            <option value="{{.ID}}" {{if eq .ID $.QuotaRegion}}selected{{end}}>{{.ID}} · {{.Name}}</option>
-                          {{end}}
-                        </select>
-                      </div>
-                      <button class="shrink-0 rounded-md bg-white border border-slate-200 text-slate-600 px-3 py-1.5 text-[10px] font-bold hover:text-indigo-600 hover:border-indigo-300 transition">
-                        刷新
-                      </button>
-                    </div>
-                    <div class="flex items-center gap-2 text-[10px] text-slate-500 border-t border-slate-100 pt-2">
-                       <span class="font-mono bg-slate-100 px-1 rounded">{{.QuotaRegion}}</span>
-                       <span>OD: <b class="text-slate-900">{{if .QuotaOn}}{{.QuotaOn}}{{else}}-{{end}}</b></span>
-                       <span class="text-slate-300">|</span>
-                       <span>Spot: <b class="text-slate-900">{{if .QuotaSpot}}{{.QuotaSpot}}{{else}}-{{end}}</b></span>
-                    </div>
-                  </form>
-                </div>
-
-                <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-                  <div class="border-b border-slate-100 p-2 bg-slate-50">
-                     <input id="accountSearch" type="text" placeholder="搜索..."
-                             class="w-full rounded-md border-0 bg-white px-3 py-1.5 text-xs font-medium ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none placeholder:text-slate-400">
-                  </div>
-
-                  <div id="accountList" class="max-h-[200px] overflow-y-auto no-scrollbar">
-                    {{range .Keys}}
-                      <div class="account-row group/row flex items-center justify-between p-2.5 hover:bg-slate-50 transition border-b border-slate-50 last:border-0">
-                        <div class="min-w-0 flex-1 pr-2">
-                          <div class="truncate font-bold text-slate-700 text-xs" data-name="{{.Name}}">{{.Name}}</div>
-                        </div>
-                        <div class="flex items-center gap-2">
-                          {{if .QuotaOn}}
-                            <span class="inline-flex min-w-[36px] justify-center rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 border border-emerald-100" title="{{if .QuotaRegion}}{{.QuotaRegion}}{{end}}">{{.QuotaOn}}v</span>
-                          {{else if .QuotaSpot}}
-                             <span class="inline-flex min-w-[36px] justify-center rounded bg-purple-50 px-1.5 py-0.5 text-[9px] font-bold text-purple-700 border border-purple-100" title="{{if .QuotaRegion}}{{.QuotaRegion}}{{end}}">S{{.QuotaSpot}}</span>
-                          {{end}}
-
-                          <div class="flex items-center gap-1">
-                            <form method="post" action="/auth/select">
-                              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-                              <input type="hidden" name="key_id" value="{{.ID}}">
-                              <button class="rounded border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition">
-                                {{if eq .ID $.PendingKey}}使用中{{else}}切 换{{end}}
-                              </button>
-                            </form>
-                            <form method="post" action="/auth/delete">
-                              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-                              <input type="hidden" name="key_id" value="{{.ID}}">
-                              <button class="opacity-0 group-hover/row:opacity-100 rounded border border-transparent px-1.5 py-1 text-[10px] font-bold text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition">
-                                删除
-                              </button>
-                            </form>
-                          </div>
-                        </div>
-                      </div>
-                    {{end}}
-                    <p id="accountEmpty" class="hidden text-[10px] text-slate-400 text-center py-4">无匹配账号</p>
-                  </div>
-                </div>
-
-              {{else}}
-                <div class="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-                   <p class="text-xs text-slate-500">暂无账号，请先添加凭证。</p>
-                </div>
-              {{end}}
-            </div>
-          </div>
-        </details>
-      </div>
-    </div>
-
-    {{if .IsAdmin}}
-      <details class="group bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <summary class="flex items-center justify-between p-5 cursor-pointer select-none hover:bg-slate-50 transition">
-          <div>
-            <h2 class="text-sm font-bold text-slate-900">系统管理</h2>
-            <p class="text-xs text-slate-500 mt-0.5">用户管理 & 注册开关</p>
-          </div>
-           <span class="text-slate-400 group-open:rotate-180 transition-transform duration-300">
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-            </span>
-        </summary>
-        <div class="px-5 pb-6 pt-2 border-t border-slate-100 bg-slate-50/50">
-          <div class="flex items-center justify-between gap-4 mt-2 mb-4">
-             <span class="text-xs font-bold text-slate-500 uppercase">注册状态</span>
-            <form method="post" action="/admin/registration">
-              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-              <input type="hidden" name="open" value="{{if .RegistrationOpen}}0{{else}}1{{end}}">
-              {{if .RegistrationOpen}}
-                <button class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald-200 bg-emerald-50 text-xs font-bold text-emerald-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 transition group/btn">
-                  <span class="w-2 h-2 rounded-full bg-emerald-500 group-hover/btn:bg-rose-500"></span>
-                  <span class="group-hover/btn:hidden">注册已开启</span>
-                  <span class="hidden group-hover/btn:inline">点击关闭</span>
-                </button>
-              {{else}}
-                <button class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 bg-slate-100 text-xs font-bold text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition group/btn">
-                  <span class="w-2 h-2 rounded-full bg-slate-400 group-hover/btn:bg-emerald-500"></span>
-                  <span class="group-hover/btn:hidden">注册已关闭</span>
-                  <span class="hidden group-hover/btn:inline">点击开启</span>
-                </button>
-              {{end}}
-            </form>
-          </div>
-
-          <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
-             <div class="bg-slate-50 px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide border-b border-slate-200 flex justify-between">
-               <span>用户列表</span>
-               <span>Total: {{len .Users}}</span>
-             </div>
-             <div class="divide-y divide-slate-100">
-              {{range .Users}}
-                <div class="flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition">
-                  <div>
-                    <div class="text-sm font-semibold text-slate-800">{{.Username}}</div>
-                    <div class="text-[10px] text-slate-400 font-mono">ID: {{.ID}}</div>
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full {{if .IsAdmin}}bg-indigo-50 text-indigo-600 border border-indigo-100{{else}}bg-slate-100 text-slate-500 border border-slate-200{{end}}">
-                      {{if .IsAdmin}}ADMIN{{else}}USER{{end}}
-                    </span>
-                    {{if ne .ID $.CurrentUserID}}
-                      <form method="post" action="/admin/users/delete">
-                        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-                        <input type="hidden" name="user_id" value="{{.ID}}">
-                        <button class="text-slate-400 hover:text-rose-600 transition">
-                          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                        </button>
-                      </form>
-                    {{end}}
-                  </div>
-                </div>
-              {{end}}
-             </div>
-          </div>
+    <div class="gc-sidebar__bottom">
+      <div class="gc-user-row">
+        <div class="gc-avatar" id="userAvatar"></div>
+        <div>
+          <div class="gc-user-name">{{.CfgUsername}}</div>
+          <div class="gc-user-role">管理员</div>
         </div>
-      </details>
+      </div>
+      <form method="post" action="/logout" style="margin:0">
+        <button type="submit" class="gc-logout-btn">
+          <span class="material-icons-round">logout</span>
+          退出登录
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN CONTENT ===== -->
+  <main class="gc-main">
+
+    <!-- Page title -->
+    <div class="gc-page-header">
+      <h1 class="gc-page-title">
+        {{if eq .Tab "settings"}}系统设置{{else if eq .Tab "awsaccount"}}AWS 账户管理{{else if eq .Tab "create"}}创建实例{{else if eq .Tab "manage"}}实例管理{{else}}AWS 工具站{{end}}
+      </h1>
+    </div>
+
+    {{if and (or (eq .Tab "create") (eq .Tab "manage")) .Accounts}}
+      <div class="berry-context-bar">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0">
+          <div class="berry-context-bar__label">
+            <span class="material-icons-round">manage_accounts</span>
+            使用账户
+          </div>
+          <div class="berry-context-bar__hint">{{if .ActiveAccount}}当前账号已确认，可用于创建和管理{{else}}请先确认要使用的 AWS 账户{{end}}</div>
+        </div>
+        <form method="post" action="/aws/use" class="berry-context-form" onsubmit="return validateUseAccount(this)">
+          <input type="hidden" name="tab" value="{{.Tab}}">
+          <input type="hidden" name="service" value="{{if eq .Tab "manage"}}{{.ManageService}}{{else}}{{.CreateService}}{{end}}">
+          <input type="hidden" name="region" value="{{.Region}}">
+          <div class="berry-select-wrapper">
+            <select name="account" class="berry-select">
+              <option value="" {{if not .ActiveAccount}}selected{{end}}>请选择要使用的 AWS 账户</option>
+              {{range .Accounts}}
+                <option value="{{.Name}}" {{if eq .Name $.ActiveAccount}}selected{{end}}>{{.Name}}{{if .Region}} · {{.Region}}{{end}}</option>
+              {{end}}
+            </select>
+          </div>
+          <button type="submit" class="berry-btn berry-btn-primary">
+            <span class="material-icons-round" style="font-size:18px">verified_user</span>
+            确认使用
+          </button>
+          <a href="/?tab=awsaccount" class="berry-btn berry-btn-outlined">
+            <span class="material-icons-round" style="font-size:18px">manage_accounts</span>
+            管理账户
+          </a>
+          {{if .ActiveAccount}}
+            <span class="berry-context-status">已确认：{{.ActiveAccount}}</span>
+          {{end}}
+        </form>
+      </div>
     {{end}}
 
-    <div class="min-h-[400px]">
+    <!-- Flash messages -->
+    {{if .Flash.Success}}
+      <div class="berry-alert berry-alert-success">
+        <span class="material-icons-round">check_circle</span>
+        {{.Flash.Success}}
+      </div>
+    {{end}}
+    {{if .Flash.Error}}
+      <div class="berry-alert berry-alert-error">
+        <span class="material-icons-round">error</span>
+        {{.Flash.Error}}
+      </div>
+    {{end}}
+    {{if .Flash.Warn}}
+      <div class="berry-alert berry-alert-warning">
+        <span class="material-icons-round">warning</span>
+        {{.Flash.Warn}}
+      </div>
+    {{end}}
+    {{if .Flash.Info}}
+      <div class="berry-alert berry-alert-info">
+        <span class="material-icons-round">info</span>
+        {{.Flash.Info}}
+      </div>
+    {{end}}
+
+    <!-- Main content -->
+    <div class="berry-animate">
       {{template "index" .}}
     </div>
 
-    <footer class="pt-8 text-center pb-8 border-t border-slate-200/50 mt-12">
-      <p class="text-[10px] text-slate-400 font-medium">AutoSail Cloud Manager</p>
-    </footer>
-
+    <div class="berry-footer">
+      AWS Multi-Service Console &nbsp;·&nbsp; Powered by Go
+    </div>
   </main>
 
   <script>
-    (function(){
-      const btn = document.getElementById('proxyCheckBtn');
-      const result = document.getElementById('proxyCheckResult');
-      if(!btn || !result) return;
-
-      btn.addEventListener('click', async () => {
-        const proxyInput = document.querySelector('input[name="proxy"]');
-        const proxy = proxyInput ? proxyInput.value.trim() : '';
-        if(!proxy){
-          result.classList.remove('hidden');
-          result.classList.remove('bg-emerald-50','border-emerald-200', 'text-emerald-800');
-          result.classList.add('bg-amber-50','border-amber-200','text-amber-800', 'border');
-          result.textContent = '请先填写 Proxy 再检测。';
-          return;
-        }
-        result.classList.remove('hidden');
-        result.className = 'text-xs bg-gray-50 border border-gray-200 rounded-xl p-3 text-slate-600 animate-pulse';
-        result.textContent = '检测中...';
-        try{
-          const r = await fetch('/proxy/check?proxy='+encodeURIComponent(proxy));
-          const j = await r.json();
-          result.classList.remove('animate-pulse');
-          if(j && j.ok){
-            result.className = 'text-xs bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-emerald-800';
-            const asText = (j.as||'').trim();
-            result.innerHTML = '<div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span class="font-bold">Connected</span></div>' +
-                              '<div class="mt-1 pl-6">IP: <span class="font-mono text-emerald-700">'+(j.ip||'')+'</span></div>' +
-                              '<div class="pl-6 mt-0.5 opacity-80">AS: <span class="font-mono">'+(asText||'N/A')+'</span></div>';
-          }else{
-            result.className = 'text-xs bg-rose-50 border border-rose-200 rounded-xl p-3 text-rose-800';
-            result.textContent = (j && j.error) ? j.error : '检测失败';
-          }
-        }catch(e){
-          result.className = 'text-xs bg-rose-50 border border-rose-200 rounded-xl p-3 text-rose-800';
-          result.textContent = '检测失败：' + (e && e.message ? e.message : e);
-        }
-      });
-    })();
-  </script>
-  <script>
-    (function(){
-      const searchInput = document.getElementById('accountSearch');
-      const list = document.getElementById('accountList');
-      const empty = document.getElementById('accountEmpty');
-      if(!searchInput || !list || !empty) return;
-
-      function normalize(text){
-        return (text || '').toLowerCase();
+    function validateUseAccount(form) {
+      if (!form || !form.account || !form.account.value) {
+        alert('请先选择要使用的 AWS 账户');
+        return false;
       }
-
-      function update(){
-        const term = normalize(searchInput.value);
-        let visible = 0;
-        list.querySelectorAll('.account-row').forEach((row) => {
-          const nameNode = row.querySelector('[data-name]');
-          const name = normalize(nameNode ? nameNode.getAttribute('data-name') : '');
-          const matched = !term || name.includes(term);
-          row.classList.toggle('hidden', !matched);
-          if(matched) visible += 1;
-        });
-        empty.classList.toggle('hidden', visible > 0);
-      }
-
-      searchInput.addEventListener('input', update);
-      update();
-    })();
-  </script>
-  <script>
-    async function copyText(text){
-      if(!text) return;
-      try{
-        await navigator.clipboard.writeText(text);
-      }catch(e){
-        const t=document.createElement('textarea');
-        t.value=text;document.body.appendChild(t);t.select();
-        document.execCommand('copy');document.body.removeChild(t);
-      }
+      return true;
     }
-
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('open');
+      document.getElementById('sidebarOverlay').classList.toggle('visible');
+    }
+    function closeSidebar() {
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebarOverlay').classList.remove('visible');
+    }
+    // Set user avatar initial
     (function(){
-      const tabRootId = 'tab-root';
-
-      async function replaceTabContent(url, pushState){
-        try{
-          const response = await fetch(url, {headers: {'X-Requested-With': 'fetch-tab'}});
-          if(!response.ok){
-            if(pushState){
-              window.location.href = url;
-            }
-            return;
-          }
-          const html = await response.text();
-          const doc = new DOMParser().parseFromString(html, 'text/html');
-          const newRoot = doc.getElementById(tabRootId);
-          const currentRoot = document.getElementById(tabRootId);
-          if(!newRoot || !currentRoot){
-            if(pushState){
-              window.location.href = url;
-            }
-            return;
-          }
-          currentRoot.replaceWith(newRoot);
-          if(pushState){
-            window.history.pushState({tab: true}, '', url);
-          }
-        }catch(e){
-          if(pushState){
-            window.location.href = url;
-          }
-        }
+      var nameEl = document.querySelector('.gc-user-name');
+      var avatarEl = document.getElementById('userAvatar');
+      if (nameEl && avatarEl) {
+        var name = nameEl.textContent.trim();
+        avatarEl.textContent = name.charAt(0).toUpperCase();
       }
-
-      document.addEventListener('click', (event) => {
-        const link = event.target.closest('a[data-tab-link]');
-        if(!link){
-          return;
-        }
-        const url = link.getAttribute('href');
-        if(!url || url.startsWith('javascript:')){
-          return;
-        }
-        if(link.target && link.target !== '_self'){
-          return;
-        }
-        event.preventDefault();
-        replaceTabContent(url, true);
-      });
-
-      document.addEventListener('change', (event) => {
-        const select = event.target.closest('select[data-tab-select]');
-        if(!select){
-          return;
-        }
-        const prefix = select.dataset.tabUrlPrefix || '';
-        if(!prefix){
-          return;
-        }
-        const url = prefix + encodeURIComponent(select.value || '');
-        replaceTabContent(url, true);
-      });
-
-      window.addEventListener('popstate', () => {
-        replaceTabContent(window.location.href, false);
-      });
-    })();
-  </script>
-  <script>
-    (function(){
-      async function handleAjaxSubmit(form){
-        const submitButtons = Array.from(form.querySelectorAll('button')).filter((btn) => {
-          const type = (btn.getAttribute('type') || 'submit').toLowerCase();
-          return type === 'submit';
-        });
-        submitButtons.forEach((btn) => {
-          btn.disabled = true;
-          btn.dataset.originalText = btn.textContent;
-          btn.textContent = '处理中...';
-        });
-        try{
-          const response = await fetch(form.action, {
-            method: (form.method || 'POST').toUpperCase(),
-            body: new FormData(form),
-            headers: {'X-Requested-With': 'ajax-form'}
-          });
-          if(!response.ok){
-            window.location.href = form.action;
-            return;
-          }
-          const html = await response.text();
-          const doc = new DOMParser().parseFromString(html, 'text/html');
-          const newTabRoot = doc.getElementById('tab-root');
-          const currentTabRoot = document.getElementById('tab-root');
-          if(newTabRoot && currentTabRoot){
-            currentTabRoot.replaceWith(newTabRoot);
-          }
-          const newFlashRoot = doc.getElementById('flash-root');
-          const currentFlashRoot = document.getElementById('flash-root');
-          if(newFlashRoot && currentFlashRoot){
-            currentFlashRoot.replaceWith(newFlashRoot);
-          }
-          if(response.url && response.url !== window.location.href){
-            window.history.pushState({form: true}, '', response.url);
-          }
-        }catch(e){
-          window.location.href = form.action;
-        }finally{
-          submitButtons.forEach((btn) => {
-            btn.disabled = false;
-            if(btn.dataset.originalText){
-              btn.textContent = btn.dataset.originalText;
-              delete btn.dataset.originalText;
-            }
-          });
-        }
-      }
-
-      document.addEventListener('submit', (event) => {
-        const form = event.target;
-        if(!(form instanceof HTMLFormElement)){
-          return;
-        }
-        if(!form.matches('[data-ajax]')){
-          return;
-        }
-        if(event.defaultPrevented){
-          return;
-        }
-        event.preventDefault();
-        handleAjaxSubmit(form);
-      });
     })();
   </script>
 </body>

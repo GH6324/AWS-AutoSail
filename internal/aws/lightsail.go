@@ -22,6 +22,22 @@ type InstanceView struct {
 	Created    string
 }
 
+
+func int32Value(v *int32) int32 {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+
+func float32Value(v *float32) float32 {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+
+
 func ListInstances(ctx context.Context, cli LightsailAPI) ([]InstanceView, error) {
 	out, err := cli.GetInstances(ctx, &lightsail.GetInstancesInput{})
 	if err != nil {
@@ -81,15 +97,16 @@ type CreateInstanceInput struct {
 	BlueprintID      string
 	BundleID         string
 	UserData         string
-	IPAddressType    string // dualstack/ipv6
+	IPAddressType    string
 	EnableFWAll      bool
 }
 
 func CreateInstance(ctx context.Context, cli LightsailAPI, in CreateInstanceInput) error {
-	ipType := in.IPAddressType
+	ipType := strings.TrimSpace(in.IPAddressType)
 	if ipType == "" {
 		ipType = "dualstack"
 	}
+
 	_, err := cli.CreateInstances(ctx, &lightsail.CreateInstancesInput{
 		InstanceNames:    []string{in.InstanceName},
 		AvailabilityZone: &in.AvailabilityZone,
@@ -99,11 +116,10 @@ func CreateInstance(ctx context.Context, cli LightsailAPI, in CreateInstanceInpu
 		IpAddressType:    types.IpAddressType(ipType),
 	})
 	if err != nil {
-		return fmt.Errorf("创建实例失败：%v", err)
+		return fmt.Errorf("创建实例失败: %v", err)
 	}
 
 	if in.EnableFWAll {
-		// your python has a small sleep before opening ports
 		time.Sleep(4 * time.Second)
 		_, err = cli.OpenInstancePublicPorts(ctx, &lightsail.OpenInstancePublicPortsInput{
 			InstanceName: &in.InstanceName,
@@ -114,10 +130,10 @@ func CreateInstance(ctx context.Context, cli LightsailAPI, in CreateInstanceInpu
 			},
 		})
 		if err != nil {
-			// keep instance created but still return error for visibility
-			return fmt.Errorf("已创建，但开启全端口失败：%v", err)
+			return fmt.Errorf("实例已创建，但开放全端口失败: %v", err)
 		}
 	}
+
 	return nil
 }
 
@@ -143,13 +159,129 @@ func OpenAllPorts(ctx context.Context, cli LightsailAPI, instanceName string) er
 }
 
 func DeleteInstanceWithStaticIPCleanup(ctx context.Context, cli LightsailAPI, name string) error {
-	// try detach & release any attached static ip first
 	_, _ = DeletePreviousStaticIPOnlyForInstance(ctx, cli, name)
 
 	return SafeRetry("删除实例", 8, 1200*time.Millisecond, func() error {
 		_, err := cli.DeleteInstance(ctx, &lightsail.DeleteInstanceInput{InstanceName: &name})
 		return err
 	})
+}
+
+
+// --- Static IP Management ---
+
+type StaticIPView struct {
+	Name       string
+	IPAddress  string
+	AttachedTo string
+	IsAttached bool
+	Region     string
+	CreatedAt  string
+}
+
+func ListStaticIPs(ctx context.Context, cli LightsailAPI) ([]StaticIPView, error) {
+	out, err := cli.GetStaticIps(ctx, &lightsail.GetStaticIpsInput{})
+	if err != nil {
+		return nil, fmt.Errorf("获取静态IP列表失败：%v", err)
+	}
+	var list []StaticIPView
+	if out == nil {
+		return list, nil
+	}
+	for _, si := range out.StaticIps {
+		attached := false
+		if si.IsAttached != nil {
+			attached = *si.IsAttached
+		}
+		created := ""
+		if si.CreatedAt != nil {
+			created = si.CreatedAt.Format("2006-01-02 15:04:05")
+		}
+		region := ""
+		if si.Location != nil {
+			region = string(si.Location.RegionName)
+		}
+		list = append(list, StaticIPView{
+			Name:       str(si.Name),
+			IPAddress:  str(si.IpAddress),
+			AttachedTo: str(si.AttachedTo),
+			IsAttached: attached,
+			Region:     region,
+			CreatedAt:  created,
+		})
+	}
+	return list, nil
+}
+
+func AllocateNewStaticIP(ctx context.Context, cli LightsailAPI, name string) error {
+	return SafeRetry("分配静态IP", 6, 1200*time.Millisecond, func() error {
+		_, err := cli.AllocateStaticIp(ctx, &lightsail.AllocateStaticIpInput{StaticIpName: &name})
+		return err
+	})
+}
+
+func DeleteStaticIP(ctx context.Context, cli LightsailAPI, name string) error {
+	// Check if attached; detach first
+	out, err := cli.GetStaticIp(ctx, &lightsail.GetStaticIpInput{StaticIpName: &name})
+	if err != nil {
+		return fmt.Errorf("获取静态IP信息失败：%v", err)
+	}
+	if out != nil && out.StaticIp != nil && out.StaticIp.IsAttached != nil && *out.StaticIp.IsAttached {
+		if err := SafeRetry("解绑静态IP", 8, 1200*time.Millisecond, func() error {
+			_, err := cli.DetachStaticIp(ctx, &lightsail.DetachStaticIpInput{StaticIpName: &name})
+			return err
+		}); err != nil {
+			return fmt.Errorf("解绑失败：%v", err)
+		}
+		WaitStaticIPDetached(ctx, cli, name, 60*time.Second)
+	}
+	return SafeRetry("释放静态IP", 8, 1200*time.Millisecond, func() error {
+		_, err := cli.ReleaseStaticIp(ctx, &lightsail.ReleaseStaticIpInput{StaticIpName: &name})
+		return err
+	})
+}
+
+func AttachStaticIPToInstance(ctx context.Context, cli LightsailAPI, staticIPName, instanceName string) error {
+	return SafeRetry("附加静态IP", 8, 1200*time.Millisecond, func() error {
+		_, err := cli.AttachStaticIp(ctx, &lightsail.AttachStaticIpInput{
+			StaticIpName: &staticIPName,
+			InstanceName: &instanceName,
+		})
+		return err
+	})
+}
+
+func DetachStaticIPFromInstance(ctx context.Context, cli LightsailAPI, staticIPName string) error {
+	return SafeRetry("解绑静态IP", 8, 1200*time.Millisecond, func() error {
+		_, err := cli.DetachStaticIp(ctx, &lightsail.DetachStaticIpInput{StaticIpName: &staticIPName})
+		return err
+	})
+}
+
+func WaitStaticIPDetached(ctx context.Context, cli LightsailAPI, staticIPName string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		out, err := cli.GetStaticIp(ctx, &lightsail.GetStaticIpInput{StaticIpName: &staticIPName})
+		if err != nil || out == nil || out.StaticIp == nil {
+			// gone -> detached+released maybe
+			return true
+		}
+		if out.StaticIp.IsAttached != nil && !*out.StaticIp.IsAttached {
+			return true
+		}
+		if out.StaticIp.AttachedTo == nil || *out.StaticIp.AttachedTo == "" {
+			return true
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return false
+}
+
+func str[T ~string](p *T) string {
+	if p == nil {
+		return ""
+	}
+	return string(*p)
 }
 
 func SwapStaticIPForInstance(ctx context.Context, cli LightsailAPI, instanceName string) error {
@@ -167,7 +299,12 @@ func SwapStaticIPForInstance(ctx context.Context, cli LightsailAPI, instanceName
 	}
 
 	// detach/release old
-	_, _ = DeletePreviousStaticIPOnlyForInstance(ctx, cli, instanceName)
+	oldName, cleanErr := DeletePreviousStaticIPOnlyForInstance(ctx, cli, instanceName)
+	if cleanErr != nil {
+		fmt.Printf("[SwapIP] 清理旧静态IP失败（继续创建新IP）: %v\n", cleanErr)
+	} else if oldName != "" {
+		fmt.Printf("[SwapIP] 已释放旧静态IP: %s\n", oldName)
+	}
 
 	// allocate new and attach
 	newName := fmt.Sprintf("sip-%s-%d", sanitize(instanceName), time.Now().Unix())
@@ -244,69 +381,6 @@ func FindAttachedStaticIPName(ctx context.Context, cli LightsailAPI, instanceNam
 	return "", ""
 }
 
-func WaitStaticIPDetached(ctx context.Context, cli LightsailAPI, staticIPName string, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		out, err := cli.GetStaticIp(ctx, &lightsail.GetStaticIpInput{StaticIpName: &staticIPName})
-		if err != nil || out == nil || out.StaticIp == nil {
-			// gone -> detached+released maybe
-			return true
-		}
-		if out.StaticIp.IsAttached != nil && !*out.StaticIp.IsAttached {
-			return true
-		}
-		if out.StaticIp.AttachedTo == nil || *out.StaticIp.AttachedTo == "" {
-			return true
-		}
-		time.Sleep(2 * time.Second)
-	}
-	return false
-}
-
-func BuildRootPasswordUserData(password string) string {
-	// 按你 python 逻辑（核心部分）：设置 root 密码、修改 sshd_config、重启 ssh
-	// 注意：保持脚本尽量兼容常见发行版
-	// 使用 base64 传递密码，避免 $, `, \, 换行等被 shell 解释；大多数发行版自带 coreutils/busybox 的 base64。
-	pw := base64.StdEncoding.EncodeToString([]byte(password))
-	return fmt.Sprintf(`#!/bin/bash
-set -e
-
-if [[ $(id -u) != 0 ]]; then
-  echo -e "\033[31m 必须以root方式运行脚本 \033[0m"
-  exit 1
-fi
-
-password_b64="%s"
-password="$(printf '%%s' "$password_b64" | base64 -d)"
-
-echo "root:$password" | chpasswd
-passwd -u root || true
-
-sed -i 's@^\(Include[ ]*/etc/ssh/sshd_config.d/\*\.conf\)@# \1@' /etc/ssh/sshd_config
-sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/g;s/^#\?PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config
-sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication no/g' /etc/ssh/sshd_config
-sed -i '/^AuthorizedKeysFile/s/^/#/' /etc/ssh/sshd_config
-sed -i 's/^#[[:space:]]*KbdInteractiveAuthentication.*\|^KbdInteractiveAuthentication.*/KbdInteractiveAuthentication yes/' /etc/ssh/sshd_config
-
-# 重启 SSH（兼容）
-if [ -f /etc/os-release ]; then
-  if [ "$(awk -F= '/VERSION_CODENAME/{print $2}' /etc/os-release)" = 'noble' ]; then
-    systemctl restart ssh || true
-  elif [[ "$(grep 'PRETTY_NAME' /etc/os-release)" =~ 'Alpine' ]]; then
-    service sshd restart || true
-  else
-    systemctl restart sshd || true
-  fi
-else
-  systemctl restart ssh >/dev/null 2>&1 || true
-  systemctl restart sshd >/dev/null 2>&1 || true
-  service sshd restart >/dev/null 2>&1 || true
-fi
-
-echo -e "\033[32m 请重新登录，用户名：root ， 密码：$password \033[0m"
-`, pw)
-}
-
 func sanitize(s string) string {
 	s = strings.ToLower(s)
 	var b strings.Builder
@@ -322,9 +396,40 @@ func sanitize(s string) string {
 	return out
 }
 
-func str[T ~string](p *T) string {
-	if p == nil {
-		return ""
-	}
-	return string(*p)
+func BuildRootPasswordUserData(password string) string {
+	pw := base64.StdEncoding.EncodeToString([]byte(password))
+	return fmt.Sprintf(`#!/bin/bash
+set -e
+
+if [[ $(id -u) != 0 ]]; then
+  echo "must run as root"
+  exit 1
+fi
+
+password_b64="%s"
+password="$(printf '%%s' "$password_b64" | base64 -d)"
+
+echo "root:$password" | chpasswd
+passwd -u root || true
+
+sed -i 's@^\(Include[ ]*/etc/ssh/sshd_config.d/\*\.conf\)@# \1@' /etc/ssh/sshd_config
+sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/g;s/^#\?PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config
+sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication no/g' /etc/ssh/sshd_config
+sed -i '/^AuthorizedKeysFile/s/^/#/' /etc/ssh/sshd_config
+sed -i 's/^#[[:space:]]*KbdInteractiveAuthentication.*\|^KbdInteractiveAuthentication.*/KbdInteractiveAuthentication yes/' /etc/ssh/sshd_config
+
+if [ -f /etc/os-release ]; then
+  if [ "$(awk -F= '/VERSION_CODENAME/{print $2}' /etc/os-release)" = 'noble' ]; then
+    systemctl restart ssh || true
+  elif [[ "$(grep 'PRETTY_NAME' /etc/os-release)" =~ 'Alpine' ]]; then
+    service sshd restart || true
+  else
+    systemctl restart sshd || true
+  fi
+else
+  systemctl restart ssh >/dev/null 2>&1 || true
+  systemctl restart sshd >/dev/null 2>&1 || true
+  service sshd restart >/dev/null 2>&1 || true
+fi
+`, pw)
 }

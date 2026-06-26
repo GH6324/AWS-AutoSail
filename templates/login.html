@@ -4,107 +4,321 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{.Title}}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <title>{{.Title}} - 登录</title>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
   <style>
-    body { font-family: 'Inter', sans-serif; }
-  </style>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            primary: { 50: '#eef2ff', 100: '#e0e7ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 900: '#312e81' }
-          },
-          animation: {
-            'blob': 'blob 10s infinite',
-          },
-          keyframes: {
-            blob: {
-              '0%': { transform: 'translate(0px, 0px) scale(1)' },
-              '33%': { transform: 'translate(30px, -50px) scale(1.1)' },
-              '66%': { transform: 'translate(-20px, 20px) scale(0.9)' },
-              '100%': { transform: 'translate(0px, 0px) scale(1)' },
-            }
-          }
-        }
-      }
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Roboto', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f8f9fa;
+      -webkit-font-smoothing: antialiased;
     }
-  </script>
+
+    /* ── Centered card layout ── */
+    .login-page {
+      display: flex;
+      width: 900px;
+      max-width: 96vw;
+      min-height: 540px;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(60,64,67,0.14), 0 1px 4px rgba(60,64,67,0.1);
+    }
+
+    /* ── Left panel (Google Cloud blue) ── */
+    .login-panel-left {
+      width: 340px;
+      flex-shrink: 0;
+      background: #1a73e8;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 40px 36px;
+      position: relative;
+      overflow: hidden;
+    }
+    .login-panel-left::before {
+      content: '';
+      position: absolute;
+      width: 380px; height: 380px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.07);
+      top: -140px; right: -160px;
+    }
+    .login-panel-left::after {
+      content: '';
+      position: absolute;
+      width: 260px; height: 260px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.05);
+      bottom: -80px; left: -80px;
+    }
+    .lp-brand {
+      position: relative; z-index: 1;
+    }
+    .lp-brand__logo {
+      width: 44px; height: 44px;
+      background: rgba(255,255,255,0.18);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Google Sans', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.5px;
+      margin-bottom: 22px;
+      border: 1px solid rgba(255,255,255,0.25);
+    }
+    .lp-brand__name {
+      font-family: 'Google Sans', sans-serif;
+      font-size: 22px;
+      font-weight: 500;
+      color: #fff;
+      line-height: 1.3;
+      margin-bottom: 10px;
+    }
+    .lp-brand__desc {
+      font-size: 13px;
+      color: rgba(255,255,255,0.78);
+      line-height: 1.7;
+    }
+    .lp-features {
+      position: relative; z-index: 1;
+      list-style: none;
+    }
+    .lp-features li {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: rgba(255,255,255,0.85);
+      font-size: 12.5px;
+      margin-bottom: 8px;
+    }
+    .lp-features li .material-icons-round {
+      font-size: 15px;
+      color: rgba(255,255,255,0.65);
+    }
+
+    /* ── Right panel (white form) ── */
+    .login-panel-right {
+      flex: 1;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 44px;
+    }
+    .login-form-wrap { width: 100%; max-width: 340px; }
+
+    .lf-header { margin-bottom: 28px; }
+    .lf-header h2 {
+      font-family: 'Google Sans', sans-serif;
+      font-size: 24px;
+      font-weight: 400;
+      color: #202124;
+      margin-bottom: 6px;
+    }
+    .lf-header p {
+      font-size: 13px;
+      color: #5f6368;
+    }
+
+    /* Google account logo row */
+    .lf-logo-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 24px;
+      border: 1px solid #dadce0;
+      margin-bottom: 24px;
+      font-size: 13px;
+      color: #3c4043;
+      font-weight: 500;
+    }
+    .lf-logo-row .lf-avatar {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: #1a73e8;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .lf-error {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 4px;
+      background: #fce8e6;
+      color: #d93025;
+      font-size: 13px;
+      margin-bottom: 18px;
+      border-left: 3px solid #d93025;
+    }
+    .lf-error .material-icons-round { font-size: 18px; flex-shrink: 0; }
+
+    .lf-group { margin-bottom: 18px; }
+    .lf-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: #5f6368;
+      margin-bottom: 5px;
+    }
+    .lf-input {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 13px;
+      border-radius: 4px;
+      border: 1px solid #dadce0;
+      background: #fff;
+      color: #202124;
+      font-size: 14px;
+      font-family: 'Roboto', sans-serif;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .lf-input:hover { border-color: #80868b; }
+    .lf-input:focus {
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(26,115,232,0.18);
+    }
+    .lf-input::placeholder { color: #9aa0a6; }
+
+    .lf-submit {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px;
+      border-radius: 4px;
+      border: none;
+      background: #1a73e8;
+      color: #fff;
+      font-family: 'Google Sans', 'Roboto', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, box-shadow 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      letter-spacing: 0.1px;
+    }
+    .lf-submit:hover { background: #1967d2; box-shadow: 0 2px 8px rgba(26,115,232,0.3); }
+    .lf-submit:active { background: #1557b0; }
+    .lf-submit .material-icons-round { font-size: 20px; }
+
+    .lf-footer {
+      margin-top: 20px;
+      padding: 12px 14px;
+      background: #f8f9fa;
+      border-radius: 4px;
+      border: 1px solid #e8eaed;
+      font-size: 12px;
+      color: #5f6368;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .lf-footer .material-icons-round { font-size: 15px; color: #80868b; }
+
+    /* ── Responsive ── */
+    @media (max-width: 700px) {
+      .login-panel-left { display: none; }
+      .login-panel-right { padding: 32px 24px; }
+      .login-page { border-radius: 0; width: 100%; min-height: 100vh; }
+      body { align-items: flex-start; padding: 0; }
+    }
+  </style>
 </head>
-<body class="min-h-screen bg-slate-50 flex items-center justify-center p-4 relative overflow-hidden">
-  
-  <div class="absolute top-0 -left-4 w-96 h-96 bg-purple-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
-  <div class="absolute top-0 -right-4 w-96 h-96 bg-indigo-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
-  <div class="absolute -bottom-8 left-20 w-96 h-96 bg-pink-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
 
-  <div class="w-full max-w-md relative z-10">
-    
-    <div class="bg-white/70 backdrop-blur-xl border border-white/60 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-8 sm:p-10">
-      
-      <div class="text-center mb-10">
-        <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-slate-900 text-white mb-5 shadow-lg shadow-slate-900/20">
-          <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5s-3 1.343-3 3 1.343 3 3 3z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.5 20a6.5 6.5 0 0113 0"/></svg>
-        </div>
-        <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">欢迎回来</h1>
-        <p class="text-sm text-slate-500 font-medium mt-2">AutoSail Cloud Management</p>
+<body>
+  <div class="login-page">
+    <!-- Left panel -->
+    <div class="login-panel-left">
+      <div class="lp-brand">
+        <div class="lp-brand__logo">AWS</div>
+        <div class="lp-brand__name">AWS 工具站</div>
+        <p class="lp-brand__desc">统一管理 AWS 账号、Lightsail 与 EC2 实例、区域激活及常用操作。</p>
       </div>
-
-      {{if or .Flash.Success .Flash.Error .Flash.Warn .Flash.Info}}
-      <div class="space-y-3 mb-6">
-        {{if .Flash.Error}}
-          <div class="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50/80 px-4 py-3 text-sm text-rose-800 animate-pulse">
-            <svg class="w-5 h-5 text-rose-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            {{.Flash.Error}}
-          </div>
-        {{end}}
-        {{if .Flash.Info}}
-          <div class="flex items-center gap-3 rounded-xl border border-sky-100 bg-sky-50/80 px-4 py-3 text-sm text-sky-700">
-            <svg class="w-5 h-5 text-sky-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            {{.Flash.Info}}
-          </div>
-        {{end}}
-      </div>
-      {{end}}
-
-      <form method="post" action="/login" class="space-y-6">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-        <div class="space-y-2">
-          <label class="block text-xs font-bold text-slate-600 uppercase tracking-wide ml-1">用户名</label>
-          <input name="username" placeholder="Enter username"
-                 class="block w-full rounded-xl border border-slate-200 bg-white/50 px-4 py-3.5 text-sm font-semibold text-slate-900 transition-all focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none placeholder:text-slate-400">
-        </div>
-        <div class="space-y-2">
-          <label class="block text-xs font-bold text-slate-600 uppercase tracking-wide ml-1">密码</label>
-          <input name="password" type="password" placeholder="••••••••"
-                 class="block w-full rounded-xl border border-slate-200 bg-white/50 px-4 py-3.5 text-sm font-semibold text-slate-900 transition-all focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none placeholder:text-slate-400">
-        </div>
-        
-        <div class="pt-2">
-          <button class="w-full rounded-xl bg-slate-900 text-white shadow-lg shadow-slate-900/20 py-4 text-sm font-bold hover:bg-slate-800 hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0 active:scale-[0.98] transition-all duration-200">
-            登 录
-          </button>
-        </div>
-      </form>
-
-      <div class="mt-8 pt-6 border-t border-slate-100 text-center text-xs text-slate-500">
-        {{if .RegistrationOpen}}
-          还没有账号？<a href="/register" class="font-bold text-indigo-600 hover:text-indigo-700 transition-colors">立即注册</a>
-        {{else}}
-          <span class="text-slate-400">注册通道已关闭</span>
-        {{end}}
-      </div>
+      <ul class="lp-features">
+        <li><span class="material-icons-round">cloud</span>多账号 Lightsail / EC2 管理</li>
+        <li><span class="material-icons-round">speed</span>vCPU 配额一键检测</li>
+        <li><span class="material-icons-round">vpn_key</span>AK/SK 密钥自动轮换</li>
+        <li><span class="material-icons-round">public</span>支持代理 / 多区域</li>
+      </ul>
     </div>
-    
-    <div class="mt-8 text-center text-[10px] text-slate-400 font-medium">
-      &copy; 2024 AutoSail System
+
+    <!-- Right panel -->
+    <div class="login-panel-right">
+      <div class="login-form-wrap">
+        <div class="lf-header">
+          <h2>登录</h2>
+          <p>使用管理员账号进入控制台</p>
+        </div>
+
+        <div class="lf-logo-row">
+          <div class="lf-avatar" id="loginAvatar">A</div>
+          AWS 控制台 · {{if .Username}}{{.Username}}{{else}}管理员{{end}}
+        </div>
+
+        {{if .Error}}
+        <div class="lf-error">
+          <span class="material-icons-round">error_outline</span>
+          {{.Error}}
+        </div>
+        {{end}}
+
+        <form method="post" action="/login">
+          <div class="lf-group">
+            <label class="lf-label">用户名</label>
+            <input name="username" class="lf-input" placeholder="输入用户名" autocomplete="username" value="{{.Username}}">
+          </div>
+          <div class="lf-group">
+            <label class="lf-label">密码</label>
+            <input name="password" type="password" class="lf-input" placeholder="输入密码" autocomplete="current-password">
+          </div>
+          <button type="submit" class="lf-submit">
+            <span class="material-icons-round">login</span>
+            登录
+          </button>
+        </form>
+
+        <div class="lf-footer">
+          <span class="material-icons-round">info</span>
+          默认账户：admin / admin，登录后建议立即修改密码。
+        </div>
+      </div>
     </div>
   </div>
+  <script>
+    // Dynamically update avatar initial from username input
+    (function() {
+      var input = document.querySelector('input[name="username"]');
+      var avatar = document.getElementById('loginAvatar');
+      if (!input || !avatar) return;
+      function updateAvatar() {
+        var val = input.value.trim();
+        avatar.textContent = val ? val.charAt(0).toUpperCase() : 'A';
+      }
+      updateAvatar();
+      input.addEventListener('input', updateAvatar);
+    })();
+  </script>
 </body>
 </html>
 {{end}}

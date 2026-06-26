@@ -18,6 +18,7 @@ import (
 )
 
 type LightsailAPI interface {
+	GetBundles(context.Context, *lightsail.GetBundlesInput, ...func(*lightsail.Options)) (*lightsail.GetBundlesOutput, error)
 	GetInstances(context.Context, *lightsail.GetInstancesInput, ...func(*lightsail.Options)) (*lightsail.GetInstancesOutput, error)
 	GetStaticIps(context.Context, *lightsail.GetStaticIpsInput, ...func(*lightsail.Options)) (*lightsail.GetStaticIpsOutput, error)
 	DetachStaticIp(context.Context, *lightsail.DetachStaticIpInput, ...func(*lightsail.Options)) (*lightsail.DetachStaticIpOutput, error)
